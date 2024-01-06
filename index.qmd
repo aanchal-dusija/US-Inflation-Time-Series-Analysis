@@ -1,0 +1,44 @@
+---
+title: "Aanchal Dusija"
+image: Me.jpeg
+about:
+  template: trestles
+  image-width: 10em
+  image-shape: round
+  links:
+    - icon: linkedin
+      text: LinkedIn
+      href: https://www.linkedin.com/in/aanchal-dusija/
+    - icon: envelope
+      text: Email
+      href: mailto:akd73@georgetown.edu
+format: 
+    html: 
+      page-layout: full
+      code-tools: false
+self-contained: true
+---
+
+Aanchal is a second-year graduate student pursuing an MS in Data Science & Analytics at Georgetown University. An enthusiastic analyst enjoys collecting, analyzing, interpreting large datasets, developing and improving processes. Strong knowledge of Microsoft Excel, Python Programming Language, R Programming Language, SQL, SPSS, Stata, PowerPoint, and other MS office tools along with proficiency at grasping new technical concepts quickly & utilizing them in a productive manner. I am passionate about my work because I love what I do. Always looking to challenge myself and grow further both professionally and personally. Always open for opportunities that will help me build a strong career foundation for future endeavours.
+
+# **Education:**
+
+**NMIMS University \| Mumbai, India**
+
+-   B.Sc. Applied Statistics & Analytics \| June 2016 - May 2019
+
+**Meghnad Desai Academy of Economics \| Mumbai, India**
+
+-   Postgraduation Diploma in Economics and Finance \| August 2019 - August 2020
+
+**Georgetown University \| Washington DC, USA**
+
+-   M.S Data Science & Analytics \| Aug 2022 - May 2024 (anticipated)
+
+# **Experience:**
+
+-   GlobalFoundries \| Digital Strategic Planning Intern \| June 2023 - Aug 2023
+
+-   National Stock Exchange \| Research Associate \| Feb 2021 - Feb 2022
+
+-   National Stock Exchange \| Research Intern \| Jan 2020 - Mar 2020

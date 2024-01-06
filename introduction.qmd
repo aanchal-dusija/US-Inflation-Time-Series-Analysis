@@ -1,0 +1,270 @@
+---
+title: "Introduction"
+self-contained: true
+execute:
+  echo: false
+format:
+  html:
+    page-layout: full
+    code-tools: false
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r, include=FALSE, message=FALSE, warning=FALSE}
+library(DT)
+library(knitr)
+
+```
+
+## US Inflation Over the Decades
+
+Inflation, a general increase in prices and fall in the purchasing value
+of money, is a complex and multifaceted economic phenomenon. It impacts
+every segment of society, from consumers and businesses to policymakers
+and investors. This exploration focuses on the fluctuations and patterns
+of US inflation over the decades, tracing its roots, its implications,
+and its broader economic significance.
+
+![](US-rising-inflation.jpeg){fig-align="left"}
+
+## Economic Impacts and Broader Repercussions
+
+Inflation doesn't just influence prices at the supermarket or the gas
+station. It's a key indicator of economic health and carries
+implications for monetary policy, interest rates, and overall economic
+stability. High or hyperinflation can erode savings, distort spending
+behavior, and create uncertainty, while deflation can signal a
+contracting economy and lead to decreased consumer spending.
+Understanding inflation's trajectory is crucial for predicting its
+future implications and formulating responsive strategies.
+
+## U.S. Inflation History and Key Monetary Changes
+
+1.  [Early U.S. History (1776-1914)]{.underline}: U.S. inflation was
+    largely influenced by wartime periods. The Gold Standard was in
+    place, tying the dollar's value to gold. Wars like the Civil War and
+    WWI led to temporary abandonments of this standard, resulting in
+    inflationary spikes, notably a 20% rise in 1918. However, post-war
+    periods and a return to the Gold Standard often brought about
+    deflation and stabilization of prices.
+
+2.  [Transition to Bretton Woods (1930s-1944):]{.underline} The Great
+    Depression saw deflationary trends due to the monetary system's
+    rigidity. By 1933, the U.S. completely left the Gold Standard. In
+    1944, the Bretton Woods Agreement established the dollar as the main
+    global reserve currency, pegged to gold.
+
+3.  [1970's Changes:]{.underline} Concerns arose in the 1970s about
+    gold's ability to cover the increasing U.S. dollar supply. Factors
+    like military expenses caused money supply surpluses. In 1971,
+    President Nixon abandoned Bretton Woods, introducing a floating
+    exchange rate system. Subsequent oil shocks in the 1970s resulted in
+    inflation rates exceeding 12% and later 13%.
+
+4.  [Volcker's Approach (1979 Onwards):]{.underline} Paul Volcker,
+    Federal Reserve Chair, implemented a new strategy in 1979. Instead
+    of controlling inflation via interest rates, the focus shifted to
+    controlling the money supply. This led to high interest rates,
+    reaching 20% in 1980. However, by 1983, inflation fell below 4%, and
+    the measures introduced during the Volcker era have helped maintain
+    relatively stable inflation levels over the subsequent decades.
+
+![](Inflation-Rate-in-the-U.S.-Full-Size.jpg){fig-align="left"}
+
+## U.S. Inflation: Today
+
+As the U.S. economy reopens, consumer demand has strengthened.
+
+Meanwhile, supply bottlenecks, from semiconductor chips to lumber, are
+causing strains on automotive and tech industries. While this points
+towards increasing inflation, some suggest that it may be temporary, as
+prices were depressed in 2020.
+
+At the same time, the Federal Reserve is following an "average inflation
+targeting" regime, which means that if a previous inflation shortfall
+occurred in the previous year, it would allow for higher inflationary
+periods to make up for them. As the last decade has been characterized
+by low inflation and low interest rates, any prolonged period of
+inflation will likely have pronounced effects on investors and financial
+markets.
+
+Recently, national attention has shifted to the increases in inflation
+which has been attributed to a number of factors such as the war in
+Ukraine, supply chain disruptions, and monetary spending. Many of these
+factors were a result of the COVID-19 pandemic and subsequent government
+stimulus packages.
+
+Economist point to three main drivers of inflation, the first of which
+is demand-pull inflation where it is theorized that excess consumer
+demand leads to companies raising their prices and thus increasing
+inflation. Next is cost-push inflation which says that when the cost for
+raw and intermediate goods increases then that pushes companies to raise
+their prices and pass the cost onto consumers. Finally, monetary policy
+affects inflation where increases in the money supply reduce the value
+of the dollar meaning consumers can buy less with the same amount of
+money, effectively increasing prices and inflation.
+
+![](CPI.png){fig-align="center"}
+
+## Literature Review:
+
+Inflation has been a major subject of economic discourse for
+decades.Numerous studies have also debated the cause-and-effect
+relationship between inflation and employment, often referencing the
+Phillips Curve. However, as economies evolve and face new challenges,
+from technological advancements to global pandemics, the determinants
+and repercussions of inflation become ever more complex.
+
+The literature has broadly evolved from macroeconomic theories of the
+past to more nuanced, data-driven analyses today. Yet, despite extensive
+research, predicting inflation remains a complex endeavor due to its
+multifaceted nature and global interdependencies.
+
+1.  [Historical Monetary Perspectives:]{.underline} Beyond Friedman and
+    Schwartz's seminal assertion that inflation is fundamentally a
+    monetary phenomenon, earlier works by Irving Fisher (1911) in "The
+    Purchasing Power of Money" presented the Quantity Theory of Money,
+    postulating a direct relationship between the money supply and the
+    overall price level.
+
+2.  [Structuralist vs. Monetarist Views]{.underline}: The 1970s saw a
+    divergence between structuralists and monetarists. While
+    monetarists, led by figures like Milton Friedman, insisted on the
+    primacy of money supply, structuralists argued for the role of other
+    factors, like wage and price rigidities. The Latin American
+    hyperinflations of the 1980s further intensified this debate, with
+    authors such as Dornbusch and Edwards (1990) exploring the
+    structural and external debt drivers of such inflationary episodes.
+
+3.  [Globalization and Inflation:]{.underline} As economies became more
+    intertwined, researchers like Rogoff (2003) began to examine how
+    globalization impacts inflation. They found that increased trade and
+    financial openness often put downward pressure on prices, given the
+    competitive forces at play.
+
+4.  [Behavioral Economics & Inflation Expectations:]{.underline}
+    Akerlof, Dickens, and Perry (1996) introduced behavioral elements,
+    suggesting that people's inflation expectations could be sticky due
+    to cognitive biases. Their work underscores that beyond raw economic
+    factors, human psychology plays a crucial role in inflation
+    dynamics.
+
+5.  [The Role of Central Banks:]{.underline} Blinder (1998) has stressed
+    the pivotal role of central banks in managing inflation
+    expectations, advocating for transparency and credibility in
+    monetary policy. This idea was further echoed by Taylor (1993) with
+    the introduction of the Taylor rule, emphasizing the importance of
+    systematic monetary policy in response to inflation and output
+    fluctuations.
+
+6.  [Inflation in a Post-Crisis World:]{.underline} Post the 2008
+    financial crisis, discussions around inflation took a new turn.
+    Authors like Ball and Mazumder (2011) explored the flattened
+    Phillips Curve, observing weaker links between unemployment and
+    inflation. In more recent times, with economic downturns triggered
+    by global events like the COVID-19 pandemic, scholars have started
+    probing the disinflationary effects of such demand shocks and their
+    potential transition to longer-term inflationary pressures due to
+    fiscal stimuli and supply chain disruptions.
+
+In sum, while historical perspectives on inflation laid the groundwork
+for our understanding, ongoing research continues to highlight its
+multifaceted determinants, influenced by both domestic policy decisions
+and global economic dynamics.
+
+## Analytical Angles:
+
+1.  **Historical Context:**
+
+    a\. [Objective]{.underline}: To discern the trajectory of inflation
+    within the U.S., pinpointing significant periods of hyperinflation
+    or deflation, and identifying the underlying causes for these
+    shifts.
+
+    b\. [Key Considerations:]{.underline}
+
+    -   Periods of rapid inflation post-World Wars, the Great
+        Depression's deflationary effects, the stagflation of the 1970s,
+        and more recent trends post the 2008 financial crisis.
+
+    -   Historical events, such as the abandonment of the Gold Standard
+        and the Bretton Woods system, and their ramifications.
+
+<!-- -->
+
+2.  **Policy and Inflation:**
+
+    a\. [Objective]{.underline}: To understand the role of the
+    government, especially the Federal Reserve, in shaping the
+    inflationary landscape through monetary and fiscal policies.
+
+    b\. [Key Considerations:]{.underline}
+
+    -   The influence of interest rates, money supply, quantitative
+        easing, and fiscal stimuli on inflation rates.
+
+    -   The effectiveness and unintended consequences of policies like
+        Paul Volcker's efforts in the 1980s or the unconventional
+        monetary policies post the 2008 crisis.
+
+<!-- -->
+
+3.  **Global Events and Inflation:**
+
+    a\. [Objective]{.underline}: To gauge how exogenous shocks, be they
+    geopolitical or economic, have impacted the U.S. inflationary
+    environment.
+
+    b\. [Key Considerations:]{.underline}
+
+    -   The 1973 and 1979 oil crises and their inflationary
+        aftereffects.
+
+    -   The impact of global recessions and recoveries, such as the
+        dot-com bubble burst or the 2008 financial meltdown.
+        Geopolitical events like wars or trade tensions and their
+        implications on the U.S. inflation rate.
+
+Each of these angles offers a distinct vantage point, together ensuring
+a comprehensive exploration of the multifaceted nature of U.S.
+inflation.
+
+![](dcinflation.jpeg){fig-align="left"}
+
+## The Big Picture:
+
+![](Time%20Series.png)
+
+## Guiding Questions:
+
+1.  How has the pattern of inflation rates in the United States evolved
+    over the last 50 years?
+2.  What economic sectors have been most affected by inflationary
+    changes in the United States over the last 50 years?
+3.  What is the relationship between inflation and key economic
+    indicators such as unemployment, wage growth, and GDP over the past
+    five decades?
+4.  Can univariate time-series models (like ARIMA/SARIMA) effectively
+    predict future inflation rates in the United States based on past
+    data from 1970-2023?
+5.  Can multivariate time series models, including ARIMAX and VAR,
+    improve predictions of yearly inflation rates in the United States
+    by including variables like Federal Reserve interest rate decisions,
+    GDP growth, and unemployment rates?
+6.  What is the correlation over time between inflation rates and key
+    economic indicators like unemployment or GDP growth in the United
+    States? How well do VAR models capture this relationship?
+7.  How do predictions of yearly inflation rates from a comprehensive
+    ARIMAX model compare with those from simpler time series models and
+    advanced methods like Deep Learning?
+8.  Using volatility models like ARCH/GARCH, to what extent can
+    financial market indicators provide insights into inflation trends
+    in the United States?
+9.  Can Deep Learning models, particularly Deep Recurrent Neural
+    Networks, effectively capture the underlying patterns of monthly
+    inflation rates from 1970-2023? Which models perform best and why?
+10. How far into the future can Deep Learning models, specifically
+    Recurrent Neural Networks, accurately forecast monthly inflation
+    rates? Which models are most effective and why?
