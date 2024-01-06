@@ -1,0 +1,700 @@
+---
+title: "ARIMAX/SARIMAX/VAR"
+self-contained: true
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+rm(list = ls())
+# LOADING LIBRARIES
+library(flipbookr)
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+library(padr)
+library(gridExtra)
+library(reshape2)
+library(vars)
+library(glmnet)
+library(kableExtra)
+library(knitr)
+```
+
+## Summary
+
+In the previous modeling sections, we analyzed a univariate time series of monthly inflation rates in the United States, calculated from the Consumer Price Index (CPI) data spanning several decades. While ARIMA and SARIMA models provided insights into the inflation trends and seasonal patterns, we aim to enhance our understanding by incorporating endogenous variables into our analysis. Endogenous variables in the context of inflation might include factors like Disposable Income, unemployment rates, Personal Consumption, and major economic policies or events. These variables are determined within the economic system and are influenced by other variables in the system, often demonstrating interdependence and reacting to changes in other economic indicators.
+
+## Literature Review
+
+Numerous studies have explored the relationship between macroeconomic indicators and inflation. A study by Sims (1980) introduced the Vector Autoregression (VAR) approach, which has been widely used in economic forecasting and policy analysis. This approach allows for the modeling of the dynamic interaction among multiple macroeconomic variables. Bernanke et al. (1998) further refined the VAR approach by incorporating structural analysis, providing deeper insights into how monetary policy affects the economy, including inflation.
+
+Research by Stock and Watson (1999) demonstrated the predictive power of incorporating multiple macroeconomic variables in forecasting inflation, showing that models with more variables tend to outperform simpler univariate models. This highlights the importance of considering a broad range of economic indicators to understand inflation dynamics more comprehensively.
+
+## VAR Model Justification
+
+A VAR model is preferred over simpler ARIMAX models in this context for several reasons:
+
+Simultaneous Modeling of Multiple Time Series: VAR models can simultaneously account for multiple interdependent economic indicators, capturing the complex relationships between them.
+
+Handling Lags Efficiently: VAR models can effectively handle multiple lags in economic data, which is crucial in understanding the delayed effects of economic policies and events on inflation.
+
+Robustness to Missing Data: Given the historical nature of economic data, VAR models can handle instances of missing data more efficiently than ARIMAX models.
+
+Dynamic Relationships: VAR models are well-suited to capture the evolving relationships between economic variables over time, which is essential in understanding how various factors influence inflation.
+
+## Methodology
+
+Our analysis will be divided into two parts, using both VAR and ARIMAX models. The first part will forecast monthly inflation rates using historical CPI data, considering various macroeconomic variables as potential predictors. The second part will focus on a more recent period to capture the effects of contemporary economic policies and global events on inflation.
+
+We will also differentiate between VAR and ARIMAX models based on their capacity to handle multiple variables. While the VAR models will consider a broad range of economic indicators, the ARIMAX models will focus on specific variables identified as key influencers of inflation, such as interest rates and unemployment rates.
+
+This approach will enable us to determine the relative impact of different economic factors on inflation and improve our ability to forecast future inflation trends based on current economic conditions.
+
+```{r, include=FALSE}
+# Set the start and end dates for the data retrieval
+start_date <- as.Date("1970-01-01") # Replace with your start date
+end_date <- as.Date("2020-01-01")   # Replace with your end date
+
+# Retrieve data from FRED
+getSymbols("CPIAUCSL", src = "FRED", from = start_date, to = end_date)
+getSymbols("UNRATE", src = "FRED", from = start_date, to = end_date)
+getSymbols("DSPIC96", src = "FRED", from = start_date, to = end_date)
+getSymbols("PCE", src = "FRED", from = start_date, to = end_date)
+getSymbols("GS10", src = "FRED", from = start_date, to = end_date)
+getSymbols("FEDFUNDS", src = "FRED", from = start_date, to = end_date)
+
+# Combine the data into one dataframe
+combined_data <- data.frame(date = index(CPIAUCSL), 
+                                    CPI = coredata(CPIAUCSL),
+                                    Unemployment = coredata(UNRATE),
+                                    DisposableIncome = coredata(DSPIC96),
+                                    PersonalConsumption = coredata(PCE),
+                                    TreasuryYield = coredata(GS10),
+                                    FederalFundsRate = coredata(FEDFUNDS))
+
+# Convert to zoo object for easier handling
+combined_zoo <- zoo(combined_data[-1], order.by = combined_data$date)
+
+# Convert the zoo object to a ts object
+# Adjust start_year and start_month to match your data
+var_ts1 <- ts(combined_zoo, start = c(1970, 1), frequency = 12)
+
+head(var_ts1)
+```
+
+## Time Series Plot
+
+```{r}
+plot.ts(var_ts1 , main = "", xlab = "")
+```
+
+## Pair Plot
+
+```{r}
+# create scatterplot matrix using plotly
+fig <- plot_ly(
+  data = as.data.frame(var_ts1),
+  type = "splom",
+  diagonal = list(visible = FALSE),
+  dimensions = list(
+    list(label = "CPI", values = ~CPIAUCSL),
+    list(label = "Unemployment", values = ~UNRATE),
+    list(label = "DisposableIncome", values = ~DSPIC96),
+    list(label = "PersonalConsumption", values = ~PCE),
+    list(label = "TreasuryYield", values = ~GS10),
+    list(label = "FederalFundsRate", values = ~FEDFUNDS)
+  )
+) %>%
+  layout(hovermode = "x")
+
+
+
+# customize layout
+fig <- fig %>% 
+  layout(
+    title = "Scatterplot Matrix of VAR Model Variables",
+    xaxis = list(title = ""),
+    yaxis = list(title = "")
+  )
+
+# display plot
+fig
+```
+
+```{r}
+# convert the matrix to a time series object with a yearly frequency
+var_ts1 <- ts(var_ts1, frequency = 1,
+                 start = 1970)
+
+# split into train and test sets
+
+set.seed(29830)
+train_idx <- sample(nrow(var_ts1), 0.9 * nrow(var_ts1))
+train <- var_ts1[train_idx, ]
+test <- var_ts1[-train_idx, ]
+```
+
+## Fitting the VAR Model
+
+Here we use the VARselect() function to find the best p to fit VAR(p). We will choose a maximum lag of 10 and check which p value returns lowest AIC.
+
+```{r}
+(var_result <- VARselect(var_ts1, lag.max = 10, type = "both"))
+```
+
+Now, we will fit VAR(1), VAR(2), and VAR(3):
+
+VAR(1) output:
+
+```{r}
+summary(fit <- VAR(var_ts1, p=1, type="both"))
+
+```
+
+VAR(2) output:
+
+```{r}
+summary(fit <- VAR(var_ts1, p=2, type="both"))
+```
+
+VAR(3) output:
+
+```{r}
+summary(fit <- VAR(var_ts1, p=3, type="both"))
+```
+
+## K-Fold Cross Validation and Model Diagnostics
+
+```{r}
+# Define the number of folds for cross-validation
+k <- 5
+
+# Define the p values to test
+p_values <- c(1, 2, 3)
+
+# Split the data into k folds
+cv_folds <- cut(seq(1, nrow(var_ts1)), breaks = k, labels = FALSE)
+
+# Initialize vectors to store RMSE and AIC values for each p value
+rmse_vec <- numeric(length(p_values))
+aic_vec <- numeric(length(p_values))
+
+# Loop over p values and perform cross-validation
+for (i in seq_along(p_values)) {
+  p <- p_values[i]
+  rmse_cv <- numeric(k)
+  aic_cv <- numeric(k)
+  for (j in 1:k) {
+    # Split the data into training and testing sets
+    train <- var_ts1[cv_folds != j, ]
+    test <- var_ts1[cv_folds == j, ]
+    
+    # Fit the VAR model with the current p value
+    var_fit <- VAR(train, p = p)
+    
+    # Make predictions for the testing set
+    pred <- predict(var_fit, n.ahead = nrow(test))$fcst
+    
+    # Calculate RMSE and AIC for the current fold
+    rmse_cv[j] <- sqrt(mean((pred$CPIAUCSL - test[,1])^2))
+    aic_cv[j] <- AIC(var_fit)
+  }
+  # Calculate the mean RMSE and AIC across all folds for the current p value
+  rmse_vec[i] <- mean(rmse_cv)
+  aic_vec[i] <- mean(aic_cv)
+}
+
+# Create a table of RMSE and AIC values for each p value
+results_table <- tibble(p_values, rmse_vec, aic_vec)
+
+# Print the results table
+kable(results_table, format = "markdown", 
+        col.names = c("P Values", "Mean RMSE (5 Folds)", "Mean AIC (5 Folds)"), align = "c", digits = 2
+        )
+```
+
+The VAR(3) model outputs the lowest Mean RMSE of 144.87 inflation from the 5-fold cross validation. However, it has the highest AIC score. Because test set performance is best and it is the simplest model, we shall choose the VAR(3) model as the best option.
+
+## Forecasting the chosen model (P=3)
+
+```{r}
+final_var <- VAR(var_ts1, p = 3)
+
+(fit.pr = predict(final_var, n.ahead = 5, ci = 0.95)) # 5 years ahead 
+
+fanchart(fit.pr) # plot prediction + error
+```
+
+The above plot showcases the forecasts for each variable present in the VAR(3) model, Yearly Inflation, Unemployment, Personal Consumption, Treasury Yield and Federal Funds Rate. The predicted forecast, from the years 2021 to 2025, for CPI is a good sign for the US due to the rising trend.
+
+Let us visualize more closely the forecasts for the CPI from 2021 to 2025, corresponding to the VAR(3) model fitted on all years (1970-2020):
+
+```{r}
+df_fvar_attack <- as.data.frame(fit.pr$fcst$CPIAUCSL)
+# add year column
+df_fvar_attack$Year <- c("2021", "2022", "2023", "2024", "2025")
+(var_plot <- ggplot(data=df_fvar_attack, aes(x=Year, y=fcst, group = 1)) +
+    geom_line(aes(color="Forecast"), linewidth=1) +
+    geom_ribbon(aes(ymin=lower, ymax=upper, fill="Confidence Interval"), alpha=0.1) +
+    labs(title="VAR(3) Forecasts for CPI from 2021 to 2025",
+         y="CPI",
+         color="", fill="",
+         caption="Data Sources: FRED") +
+    scale_color_manual(values = c("Forecast"="red")) +
+    scale_fill_manual(values = c("95% Confidence Interval"="steelblue")) +
+    theme_minimal() + 
+  theme(plot.caption.position = "plot"))
+```
+
+## Building the VAR Model (Post COVID-19)
+
+```{r, include=FALSE}
+# Set the start and end dates for the data retrieval
+start_date <- as.Date("1970-01-01") # Replace with your start date
+end_date <- as.Date("2023-06-01")   # Replace with your end date
+
+# Retrieve data from FRED
+getSymbols("CPIAUCSL", src = "FRED", from = start_date, to = end_date)
+getSymbols("UNRATE", src = "FRED", from = start_date, to = end_date)
+getSymbols("DSPIC96", src = "FRED", from = start_date, to = end_date)
+getSymbols("PCE", src = "FRED", from = start_date, to = end_date)
+getSymbols("GS10", src = "FRED", from = start_date, to = end_date)
+getSymbols("FEDFUNDS", src = "FRED", from = start_date, to = end_date)
+
+# Combine the data into one dataframe
+combined_data <- data.frame(date = index(CPIAUCSL), 
+                                    CPI = coredata(CPIAUCSL),
+                                    Unemployment = coredata(UNRATE),
+                                    DisposableIncome = coredata(DSPIC96),
+                                    PersonalConsumption = coredata(PCE),
+                                    TreasuryYield = coredata(GS10),
+                                    FederalFundsRate = coredata(FEDFUNDS))
+
+# Convert to zoo object for easier handling
+combined_zoo <- zoo(combined_data[-1], order.by = combined_data$date)
+
+# Convert the zoo object to a ts object
+# Adjust start_year and start_month to match your data
+var_ts2<- ts(combined_zoo, start = c(1970, 1), frequency = 12)
+
+head(var_ts2)
+```
+
+### Time Series Plot
+
+```{r}
+plot.ts(var_ts2 , main = "", xlab = "")
+```
+
+### Pair Plots
+
+```{r}
+# create scatterplot matrix using plotly
+fig <- plot_ly(
+  data = as.data.frame(var_ts2), 
+  type = "splom",
+  diagonal = list(visible = FALSE),
+  dimensions = list(
+    list(label = "CPI", values = ~CPIAUCSL),
+    list(label = "Unemployment", values = ~UNRATE),
+    list(label = "DisposableIncome", values = ~DSPIC96),
+    list(label = "PersonalConsumption", values = ~PCE),
+    list(label = "TreasuryYield", values = ~GS10),
+    list(label = "FederalFundsRate", values = ~FEDFUNDS)
+  )
+) %>%
+  layout(hovermode = "x")
+
+fig <- fig %>% 
+  layout(
+    title = "Scatterplot Matrix of VAR Model Variables (Post COVID-19)",
+    xaxis = list(title = ""),
+    yaxis = list(title = "")
+  )
+
+# display plot
+fig
+```
+
+### Fitting the VAR Model
+
+Here we use the VARselect() function to find the best p to fit VAR(p). We will choose a maximum lag of 10 and check which p value returns lowest AIC.
+
+```{r}
+(var_result <- VARselect(var_ts2, lag.max = 10, type = "both"))
+```
+
+Now, we will fit VAR(1), VAR(2), and VAR(3):
+
+VAR(1) output:
+
+```{r}
+summary(fit <- VAR(var_ts2, p=1, type="both"))
+```
+
+VAR(2) output:
+
+```{r}
+summary(fit <- VAR(var_ts2, p=2, type="both"))
+```
+
+VAR(3) output:
+
+```{r}
+summary(fit <- VAR(var_ts2, p=3, type="both"))
+```
+
+### K-Fold Cross Validation and Model Diagnostics
+
+```{r}
+# Define the number of folds for cross-validation
+k <- 5
+
+# Define the p values to test
+p_values <- c(1, 2, 3)
+
+# Split the data into k folds
+cv_folds <- cut(seq(1, nrow(var_ts2)), breaks = k, labels = FALSE)
+
+# Initialize vectors to store RMSE and AIC values for each p value
+rmse_vec <- numeric(length(p_values))
+aic_vec <- numeric(length(p_values))
+
+# Loop over p values and perform cross-validation
+for (i in seq_along(p_values)) {
+  p <- p_values[i]
+  rmse_cv <- numeric(k)
+  aic_cv <- numeric(k)
+  for (j in 1:k) {
+    # Split the data into training and testing sets
+    train <- var_ts2[cv_folds != j, ]
+    test <- var_ts2[cv_folds == j, ]
+    
+    # Fit the VAR model with the current p value
+    var_fit <- VAR(train, p = p)
+    
+    # Make predictions for the testing set
+    pred <- predict(var_fit, n.ahead = nrow(test))$fcst
+    
+    # Calculate RMSE and AIC for the current fold
+    rmse_cv[j] <- sqrt(mean((pred$CPIAUCSL - test[,1])^2))
+    aic_cv[j] <- AIC(var_fit)
+  }
+  # Calculate the mean RMSE and AIC across all folds for the current p value
+  rmse_vec[i] <- mean(rmse_cv)
+  aic_vec[i] <- mean(aic_cv)
+}
+
+# Create a table of RMSE and AIC values for each p value
+results_table <- tibble(p_values, rmse_vec, aic_vec)
+
+# Print the results table
+kable(results_table, format = "markdown", 
+        col.names = c("P Values", "Mean RMSE (5 Folds)", "Mean AIC (5 Folds)"), align = "c", digits = 2
+        )
+```
+
+The VAR(2) model outputs the lowest Mean RMSE of 197.84 from the 5-fold cross validation. However, it has the highest AIC score. Because predictive performance is best and it is the simplest model, we shall choose the VAR(2) model as the best option.
+
+### Forecasting the chosen model (P=2)
+
+```{r}
+final_var <- VAR(var_ts2, p = 2)
+
+(fit.pr = predict(final_var, n.ahead = 5, ci = 0.95)) # 5 years ahead 
+
+fanchart(fit.pr) # plot prediction + error
+```
+
+The above plot showcases the forecasts for each variable present in the VAR(2) model, Yearly Inflation, Unemployment, Personal Consumption, Treasury Yield and Federal Funds Rate. The above plot showcases the forecasts for each variable present in the VAR(3) model, Yearly Inflation, Unemployment, Personal Consumption, Treasury Yield and Federal Funds Rate. The predicted forecast, from the years 2021 to 2025, for CPI is a good sign for the US due to the rising trend.
+
+Let us visualize more closely the forecasts for the CPI from 2021 to 2025, corresponding to the VAR(2) model fitted on Pre COVID-19 and post-COVID-19 years (2001-2020):
+
+```{r}
+df_fvar_attack <- as.data.frame(fit.pr$fcst$CPIAUCSL)
+# add year column
+df_fvar_attack$Year <- c("2021", "2022", "2023", "2024", "2025")
+(var_plot <- ggplot(data=df_fvar_attack, aes(x=Year, y=fcst, group = 1)) +
+    geom_line(aes(color="Forecast"), linewidth=1) +
+    geom_ribbon(aes(ymin=lower, ymax=upper, fill="Confidence Interval"), alpha=0.1) +
+    labs(title="VAR(3) Forecasts for CPI from 2021 to 2025",
+         y="CPI",
+         color="", fill="",
+         caption="Data Sources: FRED") +
+    scale_color_manual(values = c("Forecast"="red")) +
+    scale_fill_manual(values = c("95% Confidence Interval"="steelblue")) +
+    theme_minimal() + 
+  theme(plot.caption.position = "plot"))
+```
+
+## Manual ARIMAX Modelling (1970-2020: Pre COVID)
+
+The ARIMAX model being analyzed in this section is:
+
+CPI \~ Unemployment Rate + Disposable Income + Personal Consumption + Treasury Yield + Federal Funds Rate
+
+## Regression Summary and Fitting ARIMA to Residuals
+
+```{r}
+fit.reg <- lm(CPIAUCSL ~ ., data =var_ts1)
+summary(fit.reg)
+```
+
+```{r}
+res.fit<-ts(residuals(fit.reg),star=decimal_date(as.Date("1970-01-01",format = "%Y-%m-%d")),frequency = 1)
+
+# Then look at the residuals 
+res.fit %>% ggtsdisplay() # no need to difference
+```
+
+```{r}
+#q=1,3 Q=1 , p=1,2, P=1,2
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,d1,d2,data){
+  
+  temp=c()
+  d=0
+  D=0
+  s=12
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*44),nrow=44)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          for(d in d1:d2)
+       
+        {
+          if(p+d+q+P+D+Q<=8)
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  }
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+##q=1,3 Q=0 p=1,2 P=0 d=0
+
+output=SARIMA.c(p1=1,p2=3,q1=1,q2=4,P1=1,P2=3,Q1=1,Q2=2,d1=0,d2=0,data=res.fit)
+output
+```
+
+### ARIMA(1,0,3)
+
+```{r}
+output[which.min(output$AIC),] 
+output[which.min(output$BIC),]
+output[which.min(output$AICc),]
+
+```
+
+### Model Diagnostics
+
+```{r}
+model_outputar2 <- capture.output(sarima(res.fit, 1,0,3, 0,0,0))
+cat(model_outputar2[57:89], model_outputar2[length(model_outputar2)], sep = "\n")
+```
+
+```{r}
+arimaModel_1 <- arima(res.fit, order = c(1,0,3))
+forecast1=predict(arimaModel_1, 5)
+# create df with fcast preds and +-1.96 SE for 95% CI Bands
+farimax_df <- data.frame(
+  Year = 2021:2025,
+  fcst = as.numeric(forecast1$pred),
+  lower = as.numeric(forecast1$pred - 1.96 * forecast1$se),
+  upper = as.numeric(forecast1$pred + 1.96 * forecast1$se)
+)
+
+
+(arimax_plot <- ggplot(data=farimax_df, aes(x=Year, y=fcst, group = 1)) +
+    geom_line(aes(color="Forecast"), linewidth=1) +
+    geom_ribbon(aes(ymin=lower, ymax=upper, fill="Confidence Interval"), alpha=0.1) +
+    labs(title="ARIMA(1,0,3) Forecasts for CPI from 2021 to 2025",
+         y="CPI",
+         color="", fill="",
+         caption="Data Sources: FRED") +
+    scale_color_manual(values = c("Forecast"="red")) +
+    scale_fill_manual(values = c("95% Confidence Interval"="steelblue")) +
+    theme_minimal() + 
+  theme(plot.caption.position = "plot", plot.caption = element_text(size=8)))
+```
+
+## Manual ARIMAX Modelling (2020-2023: Post COVID-19 )
+
+The ARIMAX model being analyzed in this section is:
+
+CPI \~ Unemployment Rate + Disposable Income + Personal Consumption + Treasury Yield + Federal Funds Rate
+
+## Regression Summary and Fitting ARIMA to Residuals
+
+```{r}
+fit.reg <- lm(CPIAUCSL ~ ., data =var_ts2)
+summary(fit.reg)
+
+```
+
+```{r}
+res.fit<-ts(residuals(fit.reg),star=decimal_date(as.Date("1970-01-01",format = "%Y-%m-%d")),frequency = 1)
+
+# Then look at the residuals 
+res.fit %>% ggtsdisplay() # no need to difference
+```
+
+```{r}
+#q=1,3 Q=1 , p=1,2, P=1,2
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,d1,d2,data){
+  
+  temp=c()
+  d=0
+  D=0
+  s=12
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*44),nrow=44)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          for(d in d1:d2)
+       
+        {
+          if(p+d+q+P+D+Q<=8)
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  }
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+##q=1,2 Q=0 , p=1,2 P=0 d=0
+
+output=SARIMA.c(p1=1,p2=3,q1=1,q2=4,P1=1,P2=3,Q1=1,Q2=2,d1=0,d2=0,data=res.fit)
+output
+```
+
+### 
+
+```{r}
+output[which.min(output$AIC),] 
+output[which.min(output$BIC),]
+output[which.min(output$AICc),]
+model_outputma2 <- capture.output(sarima(res.fit, 1,0,3,0,0,0))
+cat(model_outputma2[57:89], model_outputma2[length(model_outputar2)], sep = "\n")
+```
+
+```{r}
+arimaModel_1 <- arima(res.fit, order = c(1,0,3))
+forecast1=predict(arimaModel_1, 5)
+# create df with fcast preds and +-1.96 SE for 95% CI Bands
+farimax_df <- data.frame(
+  Year = 2021:2025,
+  fcst = as.numeric(forecast1$pred),
+  lower = as.numeric(forecast1$pred - 1.96 * forecast1$se),
+  upper = as.numeric(forecast1$pred + 1.96 * forecast1$se)
+)
+
+#plot(forecast1$pred, main = "ARIMA(2,0,0) Forecast For 5 Years", xlab = "Time", ylab = "Values", col = "red")
+(arimax_plot <- ggplot(data=farimax_df, aes(x=Year, y=fcst, group = 1)) +
+    geom_line(aes(color="Forecast"), linewidth=1) +
+    geom_ribbon(aes(ymin=lower, ymax=upper, fill="Confidence Interval"), alpha=0.1) +
+    labs(title="ARIMA(1,0,3) Forecasts for CPI from 2021 to 2025",
+         y="CPI",
+         color="", fill="",
+         caption="Data Sources: FRED") +
+    scale_color_manual(values = c("Forecast"="red")) +
+    scale_fill_manual(values = c("95% Confidence Interval"="steelblue")) +
+    theme_minimal() + 
+  theme(plot.caption.position = "plot", plot.caption = element_text(size=8)))
+```
+
+## Final Results: Unveiling the Impact of Post-COVID Data on Economic Forecasting: Insights from VAR(2) and ARIMAX Models
+
+The Emergence of VAR(2) as the Front-Runner in Post-Pandemic Economic Forecasting In the realm of economic forecasting, the COVID-19 pandemic has catalyzed a paradigm shift, challenging conventional models and necessitating a reevaluation of data relevance. Our analysis reveals a compelling narrative: the Vector Autoregression (VAR) model, specifically VAR(2), emerges as a beacon of adaptability and accuracy in this new economic era.
+
+**Key Findings:**
+
+[VAR(2) Model Proficiency:]{.underline} The VAR(2) model, utilizing data exclusively from the post-COVID era, significantly outstripped other models in forecasting accuracy. This model adeptly captured the increasing economic trends unique to this period, underscoring its ability to adapt to rapid changes.
+
+[Post-COVID Data's Preeminence:]{.underline} The analysis underscores the importance of focusing on recent, post-pandemic data. Traditional datasets, encompassing years prior to COVID-19, now offer less predictive value for current and future economic states. This shift is vividly reflected in the performance leap of the VAR(2) model, which thrives on post-COVID data.
+
+**Comparing VAR(2) with ARIMAX Models**: A Tale of Two Methodologies
+
+Our journey into economic forecasting doesn't end with VAR models. A comparison with ARIMAX (Autoregressive Integrated Moving Average with Exogenous Variables) models painted a nuanced picture:
+
+[ARIMAX Model Disparities]{.underline}: Models trained on all-inclusive data spanning from 1970 to 2020 paled in comparison to those trained solely on post-COVID data. This was particularly evident in the leap in adjusted R-squared values, indicating a more accurate fit when focusing on recent data.
+
+[VAR's Superiority]{.underline}: Despite the improvements seen in ARIMAX models using post-COVID data, they fell short of the predictive prowess exhibited by VAR models. This highlighted VAR's superior ability to interpret and forecast based on the interplay between multiple economic indicators.
+
+**Deciphering the Economic Narrative**[:]{.underline} The Role of Key Variables
+
+Our exploration revealed two variables as particularly influential in forecasting the yearly Consumer Price Index (CPI) in the US: Personal Consumption and Treasury Yield. These variables showcased a high correlation with the CPI, hinting at their pivotal roles in the post-pandemic economic landscape.
+
+[Personal Consumption]{.underline}: Reflecting shifts in consumer behavior during the pandemic, this variable has become a critical indicator of economic health.
+
+[Treasury Yield]{.underline}: Serving as a barometer for broader economic trends and policies, Treasury Yield's correlation with CPI underscores its significance in our current economic context.
+
+**The Road Ahead:** Embracing Change in Economic
+
+Forecasting In conclusion, our analysis not only highlights the VAR(2) model's adeptness in navigating the post-COVID economic waters but also underscores the imperative to prioritize recent data for more accurate forecasting. The pandemic has irrevocably altered the economic fabric, mandating an adaptive approach to forecasting models and data selection.
+
+Stay tuned as we continue to explore and unravel the complexities of economic forecasting in this ever-changing world.

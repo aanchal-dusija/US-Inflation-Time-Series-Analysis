@@ -1,0 +1,411 @@
+---
+title: "Data Visualization"
+self-contained: true
+code-fold: true
+---
+
+## Macro-Economic Indicators for Inflation Analysis: A Deep Dive
+
+The US economy, being one of the largest and most influential economies globally, is driven by a plethora of interlinked factors. To fully grasp its dynamics, one must consider a vast array of economic indicators. The visualizations presented here encapsulate multiple crucial aspects of the US economy, each shedding light on various sectors and metrics.
+
+In the ever-changing landscape of the global economy, keeping an eye on macro-economic indicators is crucial for investors, policymakers, and the general public. These indicators provide a snapshot of an economy's health, giving insights into its future direction.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+rm(list = ls())
+# LOADING LIBRARIES
+library(tidyverse)
+library(quantmod)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+library(lubridate)
+library(readr)
+library(patchwork)
+library(RColorBrewer)
+library(ggthemes)
+```
+
+### Inflation Rate (CPIAUCSL):
+
+-   **Definition**: The Consumer Price Index (CPI) measures the average change in prices paid by urban consumers for a basket of goods and services.
+
+-   **Significance**: It's a primary tool to gauge the cost of living and purchasing power. High inflation can erode savings and purchasing power, while deflation can indicate an economic slowdown.
+
+-   **Influencing Factors**: Supply chain disruptions, increased demand, production costs, and monetary policies.
+
+1.  **Unemployment Rate (UNRATE)**:
+
+    -   **Definition**: The percentage of the labor force that is jobless but is actively looking for work.
+
+    -   **Significance**: A high unemployment rate can signal economic distress, while a very low rate might indicate a booming economy but can also hint at potential overheating.
+
+    -   **Influencing Factors**: Economic cycles, technological changes, global events, and governmental policies.
+
+2.  **Personal Saving Rate (PSAVERT)**:
+
+    -   **Definition**: The portion of personal income that households are saving.
+
+    -   **Significance**: A rising rate may indicate cautious consumers who are holding back on spending, whereas a falling rate might signal increased consumer confidence.
+
+    -   **Influencing Factors**: Economic outlook, interest rates, and household debt.
+
+3.  **Money Supply (M2)**:
+
+    -   **Definition**: The total amount of monetary assets in the economy, including cash, checking deposits, and savings.
+
+    -   **Significance**: Rapid growth in M2 might indicate future inflation, while a decline might hint at economic slowdowns.
+
+    -   **Influencing Factors**: Central bank policies, public demand for money, and bank lending activities.
+
+4.  **Real Disposable Income (DSPIC96)**:
+
+    -   **Definition**: The income available to households after adjusting for inflation and taxes.
+
+    -   **Significance**: It shows consumers' ability to spend and save. Rising real disposable income encourages consumer spending.
+
+    -   **Influencing Factors**: Employment levels, wage growth, taxation, and inflation.
+
+5.  **Personal Consumption Expenditure (PCE)**:
+
+    -   **Definition**: The value of goods and services consumed by households.
+
+    -   **Significance**: It's a primary measure of consumer spending and thus indicates consumer confidence and potential economic growth.
+
+    -   **Influencing Factors**: Disposable income, consumer confidence, and credit availability.
+
+6.  **Treasury Yield (GS10)**:
+
+    -   **Definition**: The return on investment for a 10-year U.S. government bond.
+
+    -   **Significance**: It can indicate the risk appetite of investors. Lower yields might suggest a flight to safety, while higher yields could indicate optimism.
+
+    -   **Influencing Factors**: Central bank policies, economic outlook, and global investment flows.
+
+7.  **Federal Funds Rate (FEDFUNDS)**:
+
+    -   **Definition**: The interest rate at which banks lend money to each other overnight.
+
+    -   **Significance**: It directly impacts interest rates throughout the economy, influencing borrowing costs and investment decisions.
+
+    -   **Influencing Factors**: Inflation, employment levels, and economic growth.
+
+8.  **Construction Spending (TTLCONS)**:
+
+    -   **Definition**: The total dollar amount spent on construction projects.
+
+    -   **Significance**: High spending can indicate economic growth and confidence in the real estate sector.
+
+    -   **Influencing Factors**: Interest rates, economic outlook, and property demand.
+
+9.  **Industrial Production Index (INDPRO)**:
+
+-   **Definition**: A measure of the production output of factories, mines, and utilities.
+
+-   **Significance**: It reflects the health of the industrial sector, which is a significant component of GDP.
+
+-   **Influencing Factors**: Demand for goods, technological advancements, and supply chain factors.
+
+11. **Core CPI (CPILFESL)**:
+
+-   **Definition**: The CPI minus the volatile food and energy sectors.
+
+-   **Significance**: It offers a clearer view of the underlying inflation trends without the noise of volatile sectors.
+
+-   **Influencing Factors**: Same as CPI but without the direct impacts of food and energy prices.
+
+```{r, include=FALSE}
+## DATA OF ECONOMIC INDICATORS TO CREATE DATA VIZ
+# Inflation data
+inflation_data <- read.csv("InfRate.csv")
+
+# Function to get data from FRED
+get_macro_data <- function(symbol) {
+  data <- getSymbols(Symbols = symbol, src = "FRED", auto.assign = FALSE)
+  return(data)
+}
+
+# Fetch data for each indicator
+unemployment_data <- get_macro_data("UNRATE")
+personal_saving_rate_data <- get_macro_data("PSAVERT")
+m2_data <- get_macro_data("M2")
+disposable_income_data <- get_macro_data("DSPIC96")
+personal_consumption_expenditure_data <- get_macro_data("PCE")
+treasury_yield_data <- get_macro_data("GS10")
+fed_rate_data <- get_macro_data("FEDFUNDS")
+construction_spending_data <- get_macro_data("TTLCONS")
+industrial_production_index_data <- get_macro_data("INDPRO")
+core_cpi_data <- get_macro_data("CPILFESL")
+inflation_rate_data <- get_macro_data("CPIAUCNS")
+
+# Fetch data for different categories of CPI from FRED
+all_items <- getSymbols(Symbols = "CPIAUCSL", src = "FRED", auto.assign = FALSE)
+food_beverages <- getSymbols(Symbols = "CPIUFDSL", src = "FRED", auto.assign = FALSE)
+housing <- getSymbols(Symbols = "CPIHOSSL", src = "FRED", auto.assign = FALSE)
+apparel <- getSymbols(Symbols = "CPIAPPSL", src = "FRED", auto.assign = FALSE)
+transportation <- getSymbols(Symbols = "CPITRNSL", src = "FRED", auto.assign = FALSE)
+medical_care <- getSymbols(Symbols = "CPIMEDSL", src = "FRED", auto.assign = FALSE)
+# recreation <- getSymbols(Symbols = "CPIRECNSL", src = "FRED", auto.assign = FALSE)
+education_communication <- getSymbols(Symbols = "CPIEDUSL", src = "FRED", auto.assign = FALSE)
+```
+
+## US Inflation Rate: A Historical Perspective
+
+The inflation rate, a reflection of the rate at which the general level of prices for goods and services rise, serves as a key indicator of a nation's economic health. By examining the US inflation rate over the years, we can discern how various geopolitical and economic events have shaped the country's financial landscape.
+
+The first visualization presents the US inflation rate over the years, highlighting critical events. Inflation rate changes have historically been influenced by a combination of geopolitical events, domestic policies, and global economic trends. From the OPEC Oil Embargo in 1974 to the Financial Crisis in 2007, and the recent impact of the COVID-19 pandemic, understanding the inflation rate is key to interpreting the broader economic climate.
+
+### Historical Peaks in Inflation
+
+The provided graph plots the US inflation rate across multiple decades and highlights certain key events which have had a significant influence on the economy.
+
+1.  **1969: Booming Economy**\
+    The late 1960s witnessed a booming US economy, characterized by increased consumer spending, substantial economic growth, and low unemployment. However, it was also a precursor to the inflationary pressures of the 1970s.
+
+2.  **1973: OPEC Oil Embargo**\
+    The dramatic spike in inflation around 1973 can be attributed to the OPEC (Organization of the Petroleum Exporting Countries) oil embargo, a geopolitical event that saw a rapid rise in oil prices and consequently, global inflation.
+
+3.  **1979: Iranian Revolution & Iraq-Iran War**\
+    The late 1970s again saw a surge in inflation. The Iranian Revolution, followed by the outbreak of the Iraq-Iran War, disrupted global oil supplies, driving prices and inflation upwards.
+
+4.  **1990: First Gulf War**\
+    The onset of the First Gulf War led to disruptions in oil production, echoing the oil crises of the 1970s, and pushing inflation rates up temporarily.
+
+5.  **2007: Financial Crisis**\
+    Often termed the worst financial crisis since the Great Depression, the 2007-2008 financial crisis had profound effects on global economies. In the US, it led to recessionary pressures, impacting inflation rates.
+
+6.  **2020: COVID-19 Pandemic Impact**\
+    The novel coronavirus pandemic brought unprecedented challenges, causing disruptions in global supply chains and changing consumption patterns. Its effects on the inflation rate are notable, as governments around the world pumped fiscal stimulus into their economies, leading to varied inflationary outcomes.
+
+```{r, warning=FALSE}
+
+
+# Fetching the inflation rates for the specified years
+annotation_data <- subset(inflation_data, Year %in% c(1969, 1973, 1979, 1990, 2007, 2020))
+annotation_data$label <- c("Booming Economy", "OPEC Oil Embargo", "Iraq-Iran War", "First Gulf War", "Financial Crisis", "COVID-19 Pandemic Impact")
+
+# Plotting the data
+inflation_plot <- ggplot(inflation_data, aes(x = Year, y = Inflation.Rate)) +
+  geom_line(color = "blue") +
+  geom_point(data = annotation_data, aes(x = Year, y = Inflation.Rate), color = "red", size = 3) +
+  geom_text(data = annotation_data, aes(x = Year, y = Inflation.Rate, label = label), vjust = -2, color = "darkred", size = 4, nudge_y = 0.2) +
+  labs(title = "US Inflation Rate Over the Years", 
+       x = "Year", 
+       y = "Inflation Rate (%)") +
+  theme_minimal() +
+  theme(plot.title = element_text(face="bold", size=14), 
+        axis.title = element_text(face="bold", size=12))
+
+# Display
+print(inflation_plot)
+```
+
+The US inflation rate serves as a reflective mirror, capturing the essence of global events, whether they be economic, political, or natural. By understanding its fluctuations and the reasons behind them, one can gain insights into the broader narrative of global economic history and be better prepared for future challenges.
+
+## Macro-Economic Overview: A Visual Snapshot
+
+The macroeconomic landscape is vast and complex, comprised of numerous indicators that help economists, policymakers, and the public at large understand the health and direction of an economy. Here, we delve into a visual analysis of various US macroeconomic indicators over time, providing an insightful snapshot of the country's economic journey.
+
+### Diving into the Indicators
+
+**1. Unemployment Rate:**
+
+-   **High Rate**: Indicates economic distress with fewer job opportunities.
+
+-   **Low Rate**: Suggests a booming economy, but very low rates might hint at a tight labor market, potentially leading to wage inflation.
+
+**2. Personal Saving Rate**:
+
+-   **Increase**: Indicates cautious consumers possibly due to economic uncertainty.
+
+-   **Decrease**: Suggests increased consumer confidence or a need to spend more due to rising costs.
+
+**3. M2 Money Supply**:
+
+-   **Increase**: Can be linked to inflationary pressures and might hint at expansionary monetary policies.
+
+-   **Decrease**: Might indicate contractionary policies or reduced liquidity in the economy.
+
+**4. Disposable Income**:
+
+-   **Rise**: Indicates an increase in household purchasing power.
+
+-   **Fall**: May suggest reduced earnings, higher taxation, or other economic challenges.
+
+**5. Personal Consumption Expenditure**:
+
+-   **Rise**: Reflects increased consumer spending, hinting at economic growth.
+
+-   **Fall**: Indicates reduced consumer confidence or purchasing power.
+
+**6. 10Y Treasury Yield**:
+
+-   **Rise**: Could suggest anticipated inflation, economic growth, or reduced demand for bonds.
+
+-   **Fall**: May indicate economic uncertainty, deflation, or increased bond demand.
+
+**6. Federal Funds Rate**:
+
+-   **Increase**: Suggests a tightening monetary policy, possibly to combat inflation or cool down an overheating economy.
+
+-   **Decrease**: Indicates an expansionary policy, likely to stimulate economic growth.
+
+**7. Construction Spending**:
+
+-   **Rise**: Reflects a booming construction sector, hinting at economic growth and possible future housing supply.
+
+-   **Fall**: May signal economic challenges or reduced demand for housing.
+
+**8. Industrial Production Index**:
+
+-   **Rise**: Shows a healthy industrial sector, suggesting economic growth.
+
+-   **Fall**: Indicates potential challenges in the manufacturing sector, possibly due to reduced demand or supply chain disruptions.
+
+```{r, warning=FALSE}
+# A vector of colors, here we are using the Set1 palette, but you can choose another one.
+colors <- brewer.pal(9, "Set1")
+
+plot_macro_data <- function(data, title, color) {
+  colname <- colnames(data)[1]
+  df <- data.frame(Date = index(data), Value = as.numeric(data[, colname]))
+  
+  p <- ggplot(df, aes(x = Date, y = Value)) + 
+       geom_line(color = color, size = 1) +
+       labs(title = title) +
+       theme(plot.title = element_text(size = 8, hjust = 0.5, face = "bold"),
+             panel.grid.major = element_blank(),
+             panel.grid.minor = element_blank(),
+             panel.background = element_rect(fill = "white"),
+             plot.background = element_rect(fill = "white"),
+             panel.border = element_blank())  # Removing the grid boxes
+  return(p)
+}
+
+plot_unemployment <- plot_macro_data(unemployment_data, "Unemployment Rate", colors[2])
+plot_personal_saving <- plot_macro_data(personal_saving_rate_data, "Personal Saving Rate", colors[2])
+plot_m2 <- plot_macro_data(m2_data, "M2 Money Supply", colors[2])
+plot_disposable_income <- plot_macro_data(disposable_income_data, "Disposable Income", colors[2])
+plot_personal_consumption_expenditure <- plot_macro_data(personal_consumption_expenditure_data, "Personal Consumption Expenditure", colors[2])
+plot_treasury_yield <- plot_macro_data(treasury_yield_data, "10Y Treasury Yield", colors[2])
+plot_fed_rate <- plot_macro_data(fed_rate_data, "Federal Funds Rate", colors[2])
+plot_construction_spending <- plot_macro_data(construction_spending_data, "Construction Spending", colors[2])
+plot_industrial_production_index <- plot_macro_data(industrial_production_index_data, "Industrial Production Index", colors[2])
+
+final_plot <- (plot_unemployment | plot_personal_saving | plot_m2) /
+              (plot_disposable_income | plot_personal_consumption_expenditure | plot_treasury_yield) /
+              (plot_fed_rate | plot_construction_spending | plot_industrial_production_index)
+
+print(final_plot)
+```
+
+These visual representations offer a comprehensive yet concise look at various facets of the US economy. Each plot captures the ebb and flow of its respective indicator, reflecting the economic events, policy changes, and global happenings that have steered the nation's course. For investors, policymakers, and curious minds, such a mosaic of data provides a foundational understanding, facilitating informed decisions and future predictions.
+
+There is a simultaneous rise in the Unemployment Rate and Personal Saving Rate during 2020, with a decrease in the Industrial Production Index and Construction Spending: This period reflects the economic impact of the COVID-19 pandemic. The increased unemployment rate shows the immediate effect of lockdowns and reduced business activities. The elevated personal saving rate is likely a result of consumer uncertainty during these times, leading to reduced spending and increased saving. A declining Industrial Production Index suggests disruptions in manufacturing, possibly due to supply chain challenges or reduced workforce availability. The dip in construction spending further reflects the economic slowdown during this period, with reduced investments in infrastructure or real estate.
+
+## Visualizing the Evolution of Consumer Price Index Components
+
+### Introduction
+
+Consumer Price Index (CPI) is a significant economic indicator, gauging the average change over time in the prices paid by urban consumers for a basket of consumer goods and services. By deconstructing the CPI, one can glean insights into various sectors' price movement and better understand the nuances of inflationary trends. In the interactive visualization presented, we breakdown the CPI into its core components, offering a deeper dive into the dynamics of consumer spending.
+
+Lastly, the area plot dissects the Consumer Price Index (CPI), laying bare the price movements of various consumer goods and services categories. From housing and apparel to medical care and education, this visualization lets us explore the nuances of consumer spending and inflationary trends in different sectors.
+
+### Understanding the Visualization
+
+The area plot vividly captures the journey of seven core CPI components:
+
+1.  **All Items:** This provides a comprehensive view, representing the cumulative change in prices of all goods and services.
+
+2.  **Food & Beverages:** Tracking the prices of essentials like food items and drinks showcases the dynamics of basic necessities' pricing.
+
+3.  **Housing:** Housing costs, including rents and home values, have a massive impact on consumer budgets. Monitoring this can indicate broader real estate market trends.
+
+4.  **Apparel:** The prices of clothing and accessories give insights into discretionary spending and can hint at consumer confidence.
+
+5.  **Transportation:** Whether it's the cost of buying vehicles or fuel prices, transportation costs can be indicative of energy market dynamics and manufacturing trends.
+
+6.  **Medical Care:** With healthcare being a significant concern, its pricing can reflect policy changes, innovations, and overall health sector dynamics.
+
+7.  **Education & Communication:** This captures the costs associated with educational services and communication tools, resonating with the investment in human capital and technological trends.
+
+The colors and areas under each line in the plot represent the value of each CPI component over time. As you move along the x-axis (Date), the changing areas give a sense of how each component's pricing has evolved.
+
+```{r}
+# Merging all the xts data by Date
+merged_data <- merge(all_items, food_beverages, housing, apparel, transportation, medical_care, education_communication)
+
+# Convert the merged xts object to a data.frame
+df <- data.frame(Date=index(merged_data), coredata(merged_data))
+
+## Renaming columns in df
+df <- df %>%
+  rename(
+    all_items = CPIAUCSL,
+    food_beverages = CPIUFDSL,
+    housing = CPIHOSSL,
+    apparel = CPIAPPSL,
+    transportation = CPITRNSL,
+    medical_care = CPIMEDSL,
+    education_communication = CPIEDUSL
+  )
+
+library(plotly)
+
+# Create an area plot
+plot_ly(df, x = ~Date) %>%
+  add_trace(y = ~all_items, name = "All Items", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~food_beverages, name = "Food & Beverages", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~housing, name = "Housing", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~apparel, name = "Apparel", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~transportation, name = "Transportation", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~medical_care, name = "Medical Care", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  add_trace(y = ~education_communication, name = "Education & Communication", fill = 'tozeroy', type = 'scatter', mode = 'lines') %>%
+  layout(title = "Area Plot of CPI Components Over Time",
+         xaxis = list(title = "Date"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+```
+
+Let's go through a brief overview of the changes in CPI for these categories from 1947 to 2023:
+
+1.  **Medical Care**:
+
+    -   The cost of medical care in the U.S. has seen significant increases over the decades. Factors like technological advancements, an aging population, increased demand for services, and rising pharmaceutical prices have driven costs upward.
+
+    -   Over the years, the U.S. has also grappled with challenges in its healthcare system, including inefficiencies, regulatory changes, and debates over health insurance and coverage. All these factors have contributed to the rise in medical care costs.
+
+2.  **Housing**:
+
+    -   Housing costs have also experienced substantial growth since the 1940s, influenced by various factors like population growth, urbanization, land use regulations, and economic cycles.
+
+    -   There have been periods of rapid price appreciation, such as during housing bubbles, followed by corrections or crashes. Additionally, the cost of renting has also been on an upward trajectory in many urban areas, in part due to supply constraints and increasing demand.
+
+3.  **Food and Beverage**:
+
+    -   The cost of food and beverages has been influenced by factors like changes in agricultural productivity, global trade policies, supply chain disruptions, and changing consumer preferences.
+
+    -   For instance, droughts, diseases, or trade disputes can lead to temporary spikes in certain food items. Moreover, the rise of organic and specialty foods in recent decades has also had an impact on average prices.
+
+4.  **Transportation**:
+
+    -   Transportation costs encompass a wide range of expenses, including the price of vehicles, fuel, public transportation, and more.
+
+    -   Oil price shocks, technological advancements in vehicles, infrastructure spending, and changing consumer habits (like the move towards electric vehicles) can influence this category. For instance, the oil crises of the 1970s led to substantial increases in transportation costs.
+
+It's essential to note that while these categories have seen increases in nominal terms (i.e., the absolute dollar amount), it's also crucial to consider the real increase (i.e., adjusting for inflation). Over the years, wages and incomes have also risen, so the relative burden of these costs on households can vary.
+
+Additionally, regional variations can be substantial. For example, housing or transportation costs in urban areas might be much higher than in rural areas.
+
+By visualizing the individual components of the CPI, we gain a more granular perspective on the inflationary trends that affect consumers. It provides a roadmap for analysts, policymakers, and consumers to make informed decisions, whether it's setting monetary policy, making investment choices, or planning household budgets.

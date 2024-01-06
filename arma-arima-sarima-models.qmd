@@ -1,0 +1,670 @@
+---
+title: "ARMA/ARIMA/SARIMA Models"
+code-fold: true
+self-contained: true
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+rm(list = ls())
+# LOADING LIBRARIES
+library(tidyverse)
+library(quantmod)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+library(lubridate)
+library(readr)
+library(patchwork)
+library(RColorBrewer)
+library(ggthemes)
+```
+
+## Summary
+
+**Forecasting Inflation with ARMA/ARIMA/SARIMA Models**
+
+Inflation forecasting is of paramount importance for policymakers, investors, and consumers alike. Accurate predictions can aid in monetary policy decisions, investment strategies, and household budgeting. To forecast inflation using time series data, several models can be employed, notably ARMA, ARIMA, and SARIMA models.
+
+1.  **Autoregressive (AR) and Moving Average (MA) Models**:
+
+    -   **AR**: This model predicts future inflation based on its own past values. It assumes that the inflation rate is a linear function of its previous values.
+
+    -   **MA**: Contrary to AR, the MA model predicts inflation based on past white noise or error terms. This captures the shock effects observed in the past.
+
+2.  **Autoregressive Moving Average (ARMA) Model**:
+
+    -   Combines both AR and MA components. Suitable for time series data that exhibit patterns not captured by AR or MA models alone.
+
+3.  **Autoregressive Integrated Moving Average (ARIMA) Model**:
+
+    -   An extension of the ARMA model that includes "integration" (I). This represents the number of differences needed to make the time series stationary.
+
+    -   Especially pertinent for inflation data, which may have trends or cycles that render the data non-stationary.
+
+4.  **Seasonal Autoregressive Integrated Moving Average (SARIMA) Model**:
+
+    -   Extends ARIMA by accounting for seasonality, which can be pivotal for inflation data affected by seasonal factors (e.g., holiday-driven consumer spending or agricultural harvest cycles).
+
+**Checking Stationarity**: For accurate forecasting, it's vital that the inflation data is stationary, meaning its statistical properties like mean and variance remain constant over time.
+
+-   Use the Autocorrelation Function (ACF) plot to test for stationarity. If significant correlations persist over several lags, the data may be non-stationary.
+
+-   Differencing the data, often first or even second differences, can help in achieving stationarity by eliminating trends or cyclical patterns.
+
+In our EDA section, an ACF plot was generated to examine stationarity in the inflation data. After ensuring stationarity, either naturally or through transformations, the ACF and Partial Autocorrelation Function (PACF) plots of the stationary data are pivotal in determining the optimal parameters for our ARIMA or SARIMA models.
+
+## Arima Modelling for Inflation
+
+```{r, include=FALSE}
+# Inflation data - Monthly
+# Get CPI data from FRED
+getSymbols("CPIAUCNS", src="FRED")  
+inflation_monthly <- diff(log(CPIAUCNS[,1]))*100
+# Remove the first observation since it's NA after differencing
+inflation_monthly <- inflation_monthly[-1, ]
+```
+
+### Splitting the data into Train and Test for Model Validation Process
+
+Upon completing the cleaning and aggregation process of the U.S. Monthly Inflation Data, we are now poised to split this time series dataset into distinct training and testing subsets. This segregation is vital to ensure our forecasting model is both trained on a comprehensive data set and validated against a segment of data it has not previously encountered.
+
+The data spans from 1913 to 2023 for every month. We split the data into a 70% train and 30% test.This allocation strategy will allow us to forecast and validate our model's performance on inflation trends spanning over years.
+
+```{r}
+train_length <- floor(0.9 * length(inflation_monthly))
+train_series <- inflation_monthly[1:train_length]
+test_series <- inflation_monthly[(train_length + 1):length(inflation_monthly)]
+```
+
+### ACF and PACF Plots for Monthly Inflation
+
+```{r}
+train_series %>% 
+  ggtsdisplay(main="ACF and PACF Plots of Monthly Inflation")
+
+```
+
+### ADF Test for Monthly Inflation
+
+H0: The time series is non-stationary. In other words, it has some time-dependent structure and does not have constant variance over time.
+
+v/s
+
+H1: The time series is stationary. In other words, it has no time-dependent structure and does have constant variance over time.
+
+```{r}
+adf.test(train_series)
+```
+
+Because the p-value from the ADF test is less than α = 0.05, we reject the null hypothesis and conclude that the monthly inflation series is stationary.Although the ADF states that the original series is stationary, the ACF plots, which clearly indicate seasonality and trend, are more reliable than the ADF test. Therefore, it is safe to conclude that the series non-stationary as per the ACF section above.
+
+### Log Transformation of Monthly Inflation and its first and second order diferrencing
+
+```{r}
+lx = log(train_series + abs(min(train_series)) + 0.01) # since inflation has negative values
+dlx = diff(lx)
+ddlx = diff(dlx, 12) 
+
+x = train_series
+
+# Plot original series
+plot.ts(x, main="Original Series")
+
+# Plot log-transformed series
+plot.ts(lx, main="Log-transformed Series")
+
+# Plot first difference of log-transformed series
+plot.ts(dlx, main="First Difference of Log-transformed Series")
+
+# Plot second difference of first difference
+plot.ts(ddlx, main="Second Difference of First Difference")
+
+```
+
+```{r}
+par(mfrow=c(2,1))
+monthplot(dlx); monthplot(ddlx)
+```
+
+Simply taking log of the number of monthly infaltion does not make it stationary. First-differencing the log number of monthly inflation does, however, make the series stationary and this series should be employed for building our time series model. Keep in mind that because first-differencing was enough to make the series stationary, we do not need to second-difference it, helping us avoid over differencing the number of monthly inflation
+
+### ADF Test for Log First Order Differencing Monthly Inflation
+
+H0: The time series is non-stationary. In other words, it has some time-dependent structure and does not have constant variance over time.
+
+v/s
+
+H1: The time series is stationary. In other words, it has no time-dependent structure and does have constant variance over time.
+
+```{r, include=FALSE}
+dlx<-na.omit(dlx)
+```
+
+```{r}
+adf.test(dlx)
+```
+
+Because the p-value from the ADF test is less than α = 0.05, we reject the null hypothesis and conclude that the log first-differenced monthly inflation series is stationary. Let us now check whether the ACF plots supports this hypothesis.
+
+### ACF and PACF Plots of Log First-Differenced Monthly Inflation
+
+```{r}
+dlx %>% 
+  ggtsdisplay(main="ACF and PACF Plots of Log First-Differenced Monthly Inflation")
+```
+
+p values obtained from PACF are 0, 1, 2, 3, 4 q values obtained from ACF are: 0, 1 d (Difference): 1
+
+### Fitting ARIMA (P,D,Q)
+
+```{r}
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*24),nrow=24) # roughly nrow = 3x4x2
+
+# p=0,1,2,3,4 
+# q=0,1,2,3 (although we only found q=1 to be significant in ACF, we may want to compare a complex ARIMA model with greater "q" value compared to a simpler ARIMA model)
+# d=1
+
+  {
+for (p in 1:5)
+{
+  for(q in 1:4)
+    for(d in 1)
+    {
+      
+      if(p-1+d+q-1<=8)
+      {
+        
+        model<- Arima(lx,order=c(p-1,d,q-1)) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+temp <- temp[order(temp$BIC, decreasing = FALSE),] 
+knitr::kable(temp)
+```
+
+Best Model in terms of AIC:
+
+```{r}
+temp[which.min(temp$AIC),] 
+```
+
+Best Model in terms of AICc:
+
+```{r}
+temp[which.min(temp$AICc),]
+```
+
+Best Model in terms of BIC:
+
+```{r}
+temp[which.min(temp$BIC),]
+```
+
+Model summary and error metrics of ARIMA(2, 1, 1):
+
+```{r}
+fit <- Arima(lx, order=c(1,1,2)) # no drift included 
+summary(fit)
+```
+
+The best model with the lowest BIC metric is the ARIMA(1,1,2).
+
+1.  **AR(2)**: This indicates an autoregressive term of order 1. It means the model uses the two most recent values (lags) of the time series in the prediction equation. The AR(1) component suggests that there's a relationship between an observation and the one preceding observations.
+
+2.  **I(1)**: This represents the integrated component of order 1. It indicates that the time series has been differenced once to make it stationary. Differencing is the process of subtracting the current value from the previous value. In the context of inflation or economic data, this can be thought of as the change in value from one period to the next.
+
+3.  **MA(2)**: This is a moving average term of order 2. The MA component accounts for the relationship between an observation and a residual error from an MA process applied to lagged observations. In simpler terms, it's a way to model the error of the prediction as a linear combination of error terms from the recent past.
+
+The ARIMA(1,1,2) model can be represented by the following equation:
+
+$$
+[(1 - 0.885B)(1 - B)X_t = (1 + 1.6633B - 0.6648B^2)Z_t]
+$$
+
+Where:
+
+\- $( B )$ is the backshift operator, which represents a lag of 1 period. $( B^2 )$ would represent a lag of 2 periods, and so on.
+
+\- $( X_t )$ is the time series value at time $( t )$.
+
+\- $( Z_t )$ is the white noise error term at time $( t )$.
+
+\- The coefficients 0.8931, 1.6770, and -0.6786 are the estimated parameters for the AR(1), MA(1), and MA(2) terms, respectively, based on the provided output.
+
+\- The term $( (1 - B) )$ represents the differencing of order 1.
+
+### Model Diagnostics of ARIMA(1,1,2)
+
+```{r}
+model_output <- capture.output(sarima(lx, 1,1,2))
+
+cat(model_output[71:102], model_output[length(model_output)], sep = "\n") 
+
+```
+
+Standardized Residuals: Essentially stating that if the errors are white noise. The model does look stationary as it captures all the signals and essentially captures the raw white noise.
+
+ACF Of Residuals: Auto-correlation of the residuals. The only q value to inspect is 1.
+
+Q-Q Plot: The series follows a normal distribution pretty closely as even the tails seem to be on the normal line.
+
+p values of the Ljung-Box statistic: Ideally, we would like to fail to reject the null hypothesis. That is, we would like to see the p-value of the test be greater than 0.05 because this means the residuals for our time series model are independent, which is often an assumption we make when creating a model. Since the lag value less than 10 have a p-value greater than 0.05, the residuals have no autocorrelations.
+
+Let's see what model is outputted by auto.arima().
+
+### Model Output of Log Monthly Inflation with auto.arima()
+
+```{r}
+fit = auto.arima(lx, seasonal = FALSE)
+summary(fit)
+```
+
+From the above output, auto.arima() too outputted an ARIMA(2,1,1) model.Some points to keep in mind when using these functions is as follows:
+
+The auto.arima() function in R uses a stepwise algorithm to search through the space of possible ARIMA models and select the one with the lowest AIC value. While this approach can be computationally efficient and provide a good starting point for model selection, it does not necessarily always find the best possible model for a given time series.
+
+On the other hand, the Arima() function in R allows us to specify the exact order of the ARIMA model and can be used to fit more complex models, such as those with seasonality, exogenous variables, or other constraints. By specifying the exact order of the model, we have more control over the modeling process and can potentially obtain a better fit to the data.
+
+In summary, the auto.arima() function can be a useful tool for quickly identifying a potentially good model, but it is not a substitute for careful model selection and customization seen when using the Arima() function.
+
+####### The ARIMA(1,1,2) model outperforms the ARIMA(2,1,1) model for the lx series, as evidenced by its lower AIC, BIC, and log likelihood values, indicating a better balance between model fit and complexity. The ARIMA(1,1,2) model's significant autoregressive term suggests the data has inherent sequential dependencies, which this model captures more effectively than the solely moving average-based ARIMA(2,1,1). While both models have similar error metrics, the simpler ARIMA(1,1,2) provides a more parsimonious and better-fitting representation of the underlying data dynamics.
+
+### Forecasting ARIMA(1,1,2) and ARIMA(2,1,1)
+
+```{r, warning=FALSE}
+arimaModel_1 <- arima(lx, order = c(1,1,2))
+arimaModel_2 <- arima(lx, order = c(2,1,1))
+
+forecast1=predict(arimaModel_1, length(test_series))
+forecast2=predict(arimaModel_2, length(test_series))
+
+# Convert the time series and forecast objects to data frames
+ts_df <- data.frame(date = time(inflation_monthly), value = as.numeric(inflation_monthly))
+train_df <- data.frame(date = time(inflation_monthly)[1:train_length], value = as.numeric(lx))
+forecast1_df <- data.frame(date = time(inflation_monthly)[(train_length + 1):length(inflation_monthly)], value = forecast1$pred)
+forecast2_df <- data.frame(date = time(inflation_monthly)[(train_length + 1):length(inflation_monthly)], value = forecast2$pred)
+
+# Plot the time series and forecasts
+ggplotly(ggplot() +
+    geom_line(data = train_df, aes(x = date, y = value, 
+              color = "Actual Train Values"), linetype = "solid", alpha=0.6, show.legend = TRUE) +
+    geom_line(data = forecast1_df, aes(x = date, y = value, 
+                                       color = "ARIMA(1,1,2) Forecast"), linetype = "solid", show.legend = TRUE) +
+    geom_line(data = forecast2_df, aes(x = date, y = value, 
+                                       color = "ARIMA(2,1,1) Forecast"), linetype = "solid", show.legend = TRUE) +
+    geom_line(data = ts_df[(train_length + 1):length(inflation_monthly),], aes(x = date, y = log(value), 
+                                       color = "Actual Forecast Values"), linetype = "solid", show.legend = TRUE) +
+    labs(x = "Date", y = "Log of Number of Monthly Inflation", title = "Forecasting ARIMA(1,1,2) and ARIMA(2,1,1)") +
+    theme_minimal() +
+    scale_color_manual(name = "Forecast", 
+                       values = c("ARIMA(1,1,2) Forecast" = "blue", 
+                                  "ARIMA(2,1,1) Forecast" = "green",
+                                   "Actual Forecast Values" = "orange",
+                                   "Actual Train Values" = "black"),
+                       labels = c("ARIMA(1,1,2) Forecast", 
+                                  "ARIMA(2,1,1) Forecast",
+                                  "Actual Forecast Values",
+                                  "Actual Train Values")))
+```
+
+From the above graph, we can note that the forecasted monthly inflations remains constant at around 1 for both models on the test set. This performance is not what was expected and, hence, it is possible that the models are not able to capture the underlying patterns in the data. This can be due to a variety of reasons, such as insufficient data and the models not being complex enough to capture the variation in the data. It is, however, pragmatic to check whether the sarima.for() function's predictions may forecast differently. Let us find out below.
+
+### Forecasting Arima (1,1,2) using Sarima.for()
+
+```{r}
+log_monthly_inflation <- ts(lx, start = c(1913, 1), frequency = 12) 
+sarima.for(ts(train_df$value, start = c(1913, 1), frequency = 12), 24, p = 1, d = 1, q = 2, main = "Forecasting ARIMA(1,1,2) using sarima.for()") 
+```
+
+### Comparing Arima(1,1,2) with Benchmarks
+
+```{r}
+autoplot(log_monthly_inflation) +
+  autolayer(meanf(log_monthly_inflation, h=24),
+            series="Mean", PI=FALSE) +
+  autolayer(naive(log_monthly_inflation, h=24),
+            series="Naïve", PI=FALSE) +
+  autolayer(snaive(log_monthly_inflation, h=24),
+            series="SNaïve", PI=FALSE)+
+  autolayer(rwf(log_monthly_inflation, h=24, drift=TRUE),
+            series="Drift", PI=FALSE)+
+  autolayer(forecast(Arima(log_monthly_inflation, order=c(1,1,2)), 24), 
+            series="ARIMA(1,1,2)",PI=FALSE) +
+  guides(colour=guide_legend(title="Forecast")) +
+  ylab("Log of Monthly inflation") + ggtitle("Forecasting ARIMA(1,1,2) and Benchmarks") + theme_minimal()
+```
+
+Arima(1,1,2) model metrics:
+
+```{r}
+fit <- Arima(log_monthly_inflation, order=c(1,1,2))
+summary(fit)
+```
+
+Mean metrics:
+
+```{r}
+f1 <- meanf(log_monthly_inflation, h=24) 
+
+checkresiduals(f1)
+accuracy(f1)
+
+```
+
+Snaive metrics:
+
+```{r}
+f2 <- snaive(log_monthly_inflation, h=24) 
+
+checkresiduals(f2)
+accuracy(f2)
+
+```
+
+Random Walk metrics:
+
+```{r}
+f3 <- rwf(log_monthly_inflation, h=24) 
+
+checkresiduals(f3)
+accuracy(f3)
+```
+
+The ARIMA(1,1,2) model seems to be the best performing among the four models considered. It has a MASE value less than 1, suggesting better performance than a naive model, and its residuals show low autocorrelation, indicating that the model has effectively captured the underlying patterns in the data. In contrast, the other models, especially the Mean and Seasonal Naive models, have not performed as effectively, with their residuals showing higher autocorrelation. The Random Walk model's negative ACF1 suggests possible over-differencing. Therefore, for future forecasts and analyses on this dataset, the ARIMA(1,1,2) model would be the recommended choice. The performance of the ARIMA(1,1,2) model versus the other models can be attributed to the inherent nature of the models and the underlying patterns in the data:
+
+1.  **Nature of ARIMA**:
+
+    -   **ARIMA** (AutoRegressive Integrated Moving Average) models combine autoregressive (AR) and moving average (MA) elements, allowing them to capture both autocorrelations and moving average patterns in the data. The **(1,1,2)** order suggests that the model uses one lag of the autoregressive term, one order of differencing, and two lags of the moving average term.
+
+2.  **Simplicity of Other Models**:
+
+    -   The **Mean model** uses a simple average of all values, which won't capture any intricate patterns in a time series beyond its central tendency.
+
+    -   The **Seasonal Naive model** assumes a repetitive pattern after a fixed number of periods. If the data doesn't have a consistent seasonality or has other complex trends, this model won't capture them effectively.
+
+    -   The **Random Walk model** is based on the premise that future values are the same as the last observed value. This model is too simplistic for series with trends or seasonality, as it doesn't anticipate any change in direction.
+
+3.  **Dynamics of the Dataset**:
+
+    -   The errors (residuals) of a good model should be random without any discernable pattern. The ARIMA(1,1,2) model had the lowest autocorrelation in residuals among all the models, indicating that it has effectively captured most of the structure from the data.
+
+4.  **Model Diagnostics**:
+
+    -   The metrics provided (AIC, BIC, MASE, ACF1) offer different perspectives on model performance. AIC and BIC values give information about the goodness of fit of the model, penalizing for complexity. MASE is a scale-free error metric that compares the given model to a naive benchmark, and ACF1 checks for any remaining autocorrelation in the residuals.
+
+## Monthly Inflation SARIMA Modelling
+
+```{r}
+# Visualize Seasonal Component
+inflation_ts <- ts(inflation_monthly, frequency = 12)  # frequency depends on your data, 12 for monthly
+inf.s=decompose(inflation_ts)$seasonal
+plot(inf.s, axes=FALSE, 
+     main='Seasonal Component of Monthly Inflation in the US Over Time', xlab="Time", ylab = "Inflation", type='c') 
+Quarters = c("1","2","3","4") 
+points(inf.s, pch=Quarters, cex=1, font=4, col=1:4)
+axis(1, 1:4); abline(v=1:4, lty=2, col=gray(.7))
+axis(2); box()
+```
+
+From the above seasonal component graph of the number of monthly inflation, we notice there does exist some level of seasonality in the original series. The seasonal component graph illustrates the degree of seasonal variation in the monthly inflation. The magnitude of the seasonal variation is shown on the y-axis of the graph, and it indicates how much the monthly inflation deviates from the average value for each season. The graph shows a repeating pattern in the number of monthly inflation over time, with clear peaks in the first and second quarters and troughs in the third quarter. This pattern implies that the monthly inflation in the US might be influenced by the season of the year.
+
+## Seasonally Differenced Monthly Inflation
+
+```{r}
+# Seasonal differenced
+attacks.diff=diff(inflation_ts,12)
+plot(attacks.diff, axes=FALSE, main='Monthly Inflation (S. differenced)',type='c', ylab = "Inflation") #with type='c' I get dashed lines
+Quarters = c("1","2","3","4") 
+points(attacks.diff, pch=Quarters, cex=1, font=4, col=1:4)
+axis(1, 1:4); abline(v=1:4, lty=2, col=gray(.7))
+axis(2); box()
+```
+
+## ACF and PACF Plots of Seasonally Differenced Monthly Inflation
+
+```{r}
+inflation_ts %>% 
+  diff(lag=12) %>% 
+  ggtsdisplay(main="ACF and PACF Plots of First Seasonal Differenced Monthly Inflation")
+```
+
+After first ordinary differencing the original series (ACF?), we saw a lot of seasonal correlation left, suggesting that first order differencing did not help in transforming the raw data into a stationary series. This differenced series cannot be used for building a robust SARIMA model. Therefore, a seasonal differencing on the original monthly inflation was performed above and we can still notice some correlation left, but lesser compared to when the raw series was differenced with first order. Therefore, it could be that D=1 and d=0. Let's keep this as one option and let's proceed with performing both seasonal differencing and first-order differencing the raw monthly inflation series.
+
+## ACF and PACF Plots of Seasonally and First Ordered Monthly Inflation
+
+```{r}
+inflation_ts %>% 
+  diff(lag=12) %>% 
+  diff() %>%
+  ggtsdisplay(main="ACF and PACF Plots of Seasonally and First Order Differenced Monthly Inflation")
+```
+
+After both seasonal differencing and ordinary differencing together the raw data, the ACF and PACF plots seem to portray the least correlation than the individual differencing methods. Next, we shall difference and select the relevant p,d,q,P,D,Q values from the original monthly inflation series for our SARIMA model.
+
+From the seasonal differencing and ordinary differencing (together) ACF and PACF plots, the following combinations for p,d,q,P,D,Q are:
+
+q values obtained from ACF = 0,1,2,3,4 Q values obtained from ACF = 1 p values obtained from PACF = 0,1,2,3,4 P values obtained from PACF = 1,2 d (Difference) = 1 D (Seasonal Difference) = 1
+
+```{r}
+######################## Check for different combinations ########
+
+
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,data){
+  
+  #K=(p2+1)*(q2+1)*(P2+1)*(Q2+1)
+  
+  temp=c()
+  d=1
+  D=1
+  s=12
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*29),nrow=29)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          if(p+d+q+P+D+Q<=9) # parsimonious principle
+          {
+            
+            model<- Arima(data,order=c(p-1,d,q-1),seasonal=c(P-1,D,Q-1))
+            ls[i,]= c(p-1,d,q-1,P-1,D,Q-1,model$aic,model$bic,model$aicc)
+            i=i+1
+            #print(i)
+            
+            }
+          }
+        }
+      }
+    }
+  
+  
+  
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+
+# q=0,1,2,3,4; Q=1 and PACF plot: p=0,1,2,3,4; P=1,2; D=1 and d=1
+
+output=SARIMA.c(p1=1,p2=5,q1=1,q2=5,P1=1,P2=3,Q1=1,Q2=2,data=inflation_ts)
+#output
+
+knitr::kable(output)
+```
+
+```{r}
+cat("\n Best Model in terms of AIC: \n")
+output[which.min(output$AIC),] 
+
+cat("\n Best Model in terms of AICc: \n")
+output[which.min(output$AICc),]
+
+cat("\n Best Model in terms of BIC: \n")
+output[which.min(output$BIC),]
+
+```
+
+The best model with the lowest AIC, AICc and BIC metric is the SARIMA(1,1,1,0,1,1) model. The equation of the SARIMA(1,1,1,0,1,1) model is given by:
+
+$$
+\begin{align*}
+(1 - \Phi B^s)(1 - B^s)Y_t &= (1 - \theta B)(1 - B)X_t \\
+\text{Where:} \\
+Y_t &\text{ is the differenced series (after applying non-seasonal and seasonal differencing).} \\
+X_t &\text{ is the original time series.} \\
+B &\text{ is the backshift operator. For example, } B^k X_t = X_{t-k}. \\
+\theta &\text{ is the parameter for the non-seasonal moving average component.} \\
+\Phi &\text{ is the parameter for the seasonal autoregressive component.} \\
+s &\text{ is the seasonal period.}
+\end{align*}
+$$
+
+##  Model Diagnostics of ARIMA(1,1,1)(0,1,1)
+
+```{r}
+model_output <- capture.output(sarima(inflation_ts, 1,1,1,0,1,1,12))
+```
+
+Standardized Residuals: Essentially stating if the errors are white noise. The model does look stationary as it captures all the signals and essentially captures the raw white noise.
+
+ACF Of Residuals: However, looking at the ACF of the Residuals gives us a definitive answer to whether the model is stationary. Because some spikes are not within the significance limits, the model is not being able to capture all the signal in the data.
+
+Q-Q Plot: The series weakly follows a normal distribution as the tails waver away significantly from the normal line.
+
+p values of the Ljung-Box statistic: Ideally, we would like to fail to reject the null hypothesis. That is, we would like to see the p-value of the test be greater than 0.05 because this means the residuals for our time series model are independent, which is often an assumption we make when creating a model. Since all lag values greater than 5 have a p-value less than 0.05, residuals have remaining autocorrelations.
+
+## Forecast for the next 3 years using ARIMA(1,1,1)(0,1,1)
+
+```{r}
+fit <- Arima(inflation_ts, order=c(0,1,1), seasonal=c(0,1,1))
+summary(fit)
+fit %>% forecast(h=36) %>% autoplot() #next 3 years
+```
+
+## Comparing (1,1,1)(0,1,1) with Benchmarks
+
+```{r}
+cat("Best model metrics: \n")
+fit <- Arima(inflation_ts, order=c(1,1,1), seasonal=c(0,1,1))
+
+autoplot(inflation_ts) +
+  autolayer(meanf(inflation_ts, h=36),
+            series="Mean", PI=FALSE) +
+  autolayer(naive(inflation_ts, h=36),
+            series="Naïve", PI=FALSE) +
+  autolayer(snaive(inflation_ts, h=36),
+            series="SNaïve", PI=FALSE)+
+  autolayer(rwf(inflation_ts, h=36, drift=TRUE),
+            series="Drift", PI=FALSE)+
+  autolayer(forecast(fit,36), 
+            series="fit",PI=FALSE) +
+  guides(colour=guide_legend(title="Forecast"))
+
+
+cat("Best model metrics: \n")
+summary(fit)
+cat("Snaive metrics: \n")
+f2 <- snaive(inflation_ts, h=36) 
+
+accuracy(f2)
+```
+
+## Seasonal cross validation of ARIMA(1,1,1)(0,1,1) and (2,1,1) using 1 Step Ahead Forecasts
+
+```{r}
+k <- 75 # minimum data length for fitting a model 
+n <- length(inflation_ts)
+#n-k # rest of the observations
+
+set.seed(123)
+
+farima1 <- function(x, h){forecast(Arima(inflation_ts, order=c(1,1,1),seasonal=c(0,1,1)), h=h)}
+e <- tsCV(inflation_ts, farima1, h=1)
+
+MAE1 <-abs(mean(e,na.rm=TRUE))
+cat("MAE for ARIMA(1,1,1)(0,1,1) is: ", MAE1)
+
+RMSE1=sqrt(mean(e^2, na.rm=TRUE)) #one-step time series cross-validation
+cat("\nRMSE for ARIMA(1,1,1)(0,1,1) is: ", RMSE1)
+
+farima2 <- function(x, h){forecast(Arima(inflation_ts, order=c(2,1,1),seasonal=c(0,1,1)), h=h)}
+e <- tsCV(inflation_ts, farima2, h=1)
+
+MAE2 <-abs(mean(e,na.rm=TRUE))
+cat("\nMAE for ARIMA(2,1,1)(0,1,1) is: ", MAE2)
+
+RMSE2=sqrt(mean(e^2, na.rm=TRUE)) #one-step time series cross-validation
+cat("\nRMSE for ARIMA(2,1,1)(0,1,1) is: ", RMSE2)
+```
+
+Both MAE and RMSE metrics agree that ARIMA(1,1,1)(0,1,1) is the best model by a slight margin. However, the BIC metric does not agree with this result as it outputted ARIMA(0,1,1)(0,1,1) as the model with lowest BIC. AIC and AICc metrics, however, do agree with the MAE and RMSE metrics generated from Seasonal Cross Validation using 1 step ahead forecasts. Let's see whether this is the case when forecasting 12 steps ahead.
+
+## Seasonal Cross Validation of ARIMA(1,1,1)(0,1,1) and ARIMA(2,1,1)(0,1,1) Using 12 steps (Seasonal Period) Ahead Forecasts
+
+```{r}
+k <- 75 # minimum data length for fitting a model 
+n <- length(inflation_ts)
+n-k # rest of the observations
+
+set.seed(123)
+
+farima1 <- function(x, h){forecast(Arima(inflation_ts, order=c(1,1,1),seasonal=c(0,1,1)), h=h)}
+
+# Compute cross-validated errors for up to 12 steps ahead
+e <- tsCV(inflation_ts, forecastfunction = farima1, h = 12)
+
+mse1 <- colMeans(e^2, na.rm = TRUE)
+
+farima2 <- function(x, h){forecast(Arima(inflation_ts, order=c(2,1,1),seasonal=c(0,1,1)), h=h)}
+# Compute cross-validated errors for up to 12 steps ahead
+e <- tsCV(inflation_ts, forecastfunction = farima2, h = 12)
+
+# Compute the MSE values and remove missing values
+mse2 <- colMeans(e^2, na.rm = TRUE)
+
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:12, MSE1 = mse1, MSE2 = mse2) %>%
+  ggplot() + geom_point(aes(y=MSE1,x= h)) + geom_point(aes(y=MSE2,x= h)) +
+           geom_line(aes(y=MSE1,x= h,colour="MSE for ARIMA(1,1,1)(0,1,1)")) + 
+           geom_line(aes(y=MSE2,x= h,colour="MSE for ARIMA(2,1,1)(0,1,1)"))+
+  theme_minimal()
+```
+
+This plot gives cross-validation statistics up to horizon 12. The procedure for seasonal cross validation using 12 steps ahead is very similar to seasonal cross validation using 1 step ahead. We need to change the "h" parameter to the desired the number of time horizons we want to forecast for. The farima() function manually written by us helps us call our desired SARIMA model with the number of horizons. Then, farima() function is called inside the tsCV() function, which helps us store the cross-validated errors for up to 12 steps ahead. Then, because we get forecasts for each time horizon, we need to take the mean of the squared column using colMeans to obtain MSE.
+
+Although we observed that the MSE and RMSE of ARIMA(1,1,1)(0,1,1) when forecasting 1 step ahead was lower than that of ARIMA(2,1,1)(0,1,1), from the above plot it can be seen that the cross-validated MSEs get lower or better as the number of forecasting steps increases. Both models' MSE performance follow a very similar pattern, with ARIMA(1,1,1)(0,1,1), picked by lowest BIC, having a lower MSE across all forecasting steps, except for step 1. Therefore, ARIMA(2,1,1)(0,1,1) is the better SARIMA model!

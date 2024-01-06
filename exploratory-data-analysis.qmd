@@ -1,0 +1,569 @@
+---
+title: "Exploratory Data Analysis"
+self-contained: true
+code-fold: true
+---
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+rm(list = ls())
+# LOADING LIBRARIES
+library(tidyverse)
+library(quantmod)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+library(lubridate)
+library(readr)
+library(patchwork)
+library(RColorBrewer)
+library(ggthemes)
+library(gridExtra)
+```
+
+Inflation is an integral part of the economic landscape. It reflects how prices of goods and services change over time. Analyzing inflation rate trends can provide insights into the health and trajectory of an economy. In this analysis, we utilize the Consumer Price Index (CPI) from the FRED database to explore monthly inflation rates.
+
+In this Exploratory Data Analysis, we delve into the monthly inflation rate over the years. Our primary objective is to understand the underlying patterns, trends, and seasonality in the data, and to prepare it for further statistical analysis or forecasting.
+
+**Introduction:** Our exploration into economic indicators brings us to a fundamental metric: the Monthly Inflation Rate, visualized using data sourced from the Federal Reserve Economic Data (FRED). The rate is calculated using the Consumer Price Index (CPI) and gives us an indication of the monthly percentage changes in prices for goods and services consumed by households.
+
+The inflation rate is derived from the Consumer Price Index (CPI) using a straightforward method: by differencing the logarithmic transformation of the CPI and then multiplying by 100. This formula helps capture the rate of change in prices in percentage terms.
+
+```{r, include=FALSE}
+## DATA OF ECONOMIC INDICATORS TO CREATE DATA VIZ
+# Inflation data - Monthly
+# Get CPI data from FRED
+getSymbols("CPIAUCNS", src="FRED")  
+inflation_monthly <- diff(log(CPIAUCNS[,1]))*100
+# Remove the first observation since it's NA after differencing
+inflation_monthly <- inflation_monthly[-1, ]
+```
+
+## **Visualizing Monthly Inflation Rates**
+
+The initial plot showcases the monthly inflation rates across the years. This visualization allows for a quick grasp of the overall inflation trends, understanding its fluctuations and identifying any patterns or anomalies.
+
+```{r}
+# Convert the time series to a data frame
+inflation_df <- data.frame(Date = index(inflation_monthly), 
+                           InflationRate = coredata(inflation_monthly))
+
+# Use the data frame for plotting
+plot_ly(data = inflation_df, x = ~Date, y = ~CPIAUCNS, type = 'scatter', mode = 'lines') %>%
+  layout(title = "Monthly Inflation Rate over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Inflation Rate (%)"))
+
+
+```
+
+#### **Key Observations:**
+
+-   **Overall Trend**: The graph show an upward trajectory, suggesting that prices have generally been increasing over the years. However, the steepness of this trajectory would indicate the pace of this inflation. A steeper line might suggest rapid inflation, while a flatter line could indicate a slower inflation rate.
+
+-   **Short-term Fluctuations**: While the general trend is upward, we see numerous dips and peaks. These fluctuations represent monthly changes, and they might be influenced by seasonal factors, such as holiday shopping seasons or energy price variations in winter and summer.
+
+-   **Significant Spikes**: A sharp upward spike in the graph could suggest a period of hyperinflation. This could be due to various reasons, such as economic policies leading to an oversupply of money, supply chain disruptions causing scarcity, or geopolitical events causing sudden economic shocks.
+
+-   **Prolonged Low Points**: We notice extended periods where the inflation rate remains notably low or even goes negative (deflation), it indicates economic recessions or periods of stagnated growth. Deflationary periods are associated with decreased consumer demand or overproduction.
+
+-   **Recent Trends**: By focusing on the most recent data points, we infer the current state of the economy. For instance, a rising inflation rate in the most recent months is a signal for policymakers to intervene to prevent potential overheating of the economy.
+
+There's a visible peak in the inflation rate around 2008. This is linked to the global financial crisis, where many economies faced recessionary pressures. Conversely, there was a dip in early 2020, it is attributed to the economic implications of the COVID-19 pandemic, with reduced consumer spending and global economic slowdown.
+
+The Monthly Inflation Rate chart is a lens through which we can view the historical and current health of the economy. While the line plot is a powerful visualization tool, the real value lies in understanding the stories and causes behind the data points. As we analyze the chart, it becomes evident that inflation is not just a number; it's a reflection of collective economic decisions, challenges, and triumphs.
+
+## **Lag Analysis of Monthly Inflation**
+
+By creating a lag plot of the monthly inflation data, we can better understand its structure. Lag plots help identify any potential autoregressive patterns in the time series data. From the lag plot, one can observe if there's a structured pattern or if the data appears random.
+
+```{r}
+
+# Convert the inflation data to a time series object
+inflation_monthly_ts <- ts(coredata(inflation_monthly), start = c(1913, 2), frequency = 12)
+
+# Generate the lag plot
+gglagplot(inflation_monthly_ts, do.lines=FALSE) +
+  ggtitle("Lag Plot of Monthly Inflation Data") +
+  xlab("Lagged Inflation Rate") +
+  ylab("Inflation Rate") +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+
+#### **Key Observations:**
+
+-   **Pattern Description**: Points clustering or aligning closely around a diagonal line from the bottom-left to the top-right indicates a strong positive auto-correlation. In simpler terms, this means that a value at any given time t is closely related to the value at time t-1 (the prior time step).
+
+-   **Economic Implications**: A positive auto-correlation in the inflation rate indicates that if the inflation rate is high in one month, it's likely to be high in the subsequent month as well. Similarly, if it's low in a particular month, it's expected to be low in the next month. This continuity could be the result of several factors:
+
+    -   **Lagged Economic Responses**: Economic policies or external shocks often don't manifest their full impact immediately. So, for instance, if certain fiscal or monetary policies lead to an increase in inflation, the repercussions might be felt over several subsequent months.
+
+    -   **Inertia in Economic Indicators**: Some economic indicators have a natural inertia, meaning they change slowly over time due to the size and complexity of economies. Inflation, being a measure of price levels across a wide array of goods and services, can often exhibit such behavior.
+
+    -   **Behavioral Factors**: If businesses expect inflation to continue rising, they might preemptively increase prices, leading to a self-fulfilling prophecy. Similarly, if consumers expect higher prices in the future, they might make purchases now rather than later, driving demand and potentially contributing to the ongoing inflation.
+
+#### **Conclusion:**
+
+A strong positive auto-correlation in monthly inflation data indicates persistence and momentum in the inflation rates from month to month. This insight can be valuable for economic analysts, policymakers, and forecasters in both understanding past inflation trends and making predictions about future movements.
+
+## **Decomposing the Time Series**
+
+Decomposition of the time series into its underlying components can provide profound insights:
+
+-   **Trend Component**: This reveals the long-term progression of the series, which can either be upward, downward, or constant.
+
+-   **Seasonal Component**: This showcases any cyclical patterns that repeat over a known, fixed period of time.
+
+-   **Random Component**: This captures the noise or randomness which isn't accounted for by the trend or seasonality.
+
+```{r}
+decomposed <- decompose(inflation_monthly_ts, type = "additive")
+
+# Create separate data frames for each component
+data_trend <- data.frame(Date = index(inflation_monthly), Value = decomposed$trend, stringsAsFactors = FALSE)
+data_seasonal <- data.frame(Date = index(inflation_monthly), Value = decomposed$seasonal, stringsAsFactors = FALSE)
+data_random <- data.frame(Date = index(inflation_monthly), RandomValue = decomposed$random, stringsAsFactors = FALSE)
+colnames(data_random) <- c("Date", "Value")
+
+# Create individual plots
+plot_trend <- plot_ly(data = data_trend, x = ~Date, y = ~Value, type = 'scatter', mode = 'lines', name = "Trend", line = list(color = 'blue')) %>%
+  layout(title = "Trend Component of Monthly Inflation Rate", xaxis = list(title = "Date"), yaxis = list(title = "Value"))
+
+plot_seasonal <- plot_ly(data = data_seasonal, x = ~Date, y = ~Value, type = 'scatter', mode = 'lines', name = "Seasonal", line = list(color = 'green')) %>%
+  layout(title = "Seasonal Component of Monthly Inflation Rate", xaxis = list(title = "Date"), yaxis = list(title = "Value"))
+
+plot_random <- plot_ly(data = data_random, x = ~Date, y = ~Value, type = 'scatter', mode = 'lines', name = "Random", line = list(color = 'red')) %>%
+  layout(title = "Random Component of Monthly Inflation Rate", xaxis = list(title = "Date"), yaxis = list(title = "Value"))
+
+# Use subplot to display them
+subplot(plot_trend, plot_seasonal, plot_random, nrows = 3, margin = 0.05)
+
+
+
+```
+
+#### **1. Trend Component**:
+
+-   **Visual Representation**: Blue line chart titled "Trend Component of Monthly Inflation Rate".
+
+-   **Interpretation**: The trend in the inflation rate is not static but rather exhibits changes over time. This implies that the long-term average level of inflation has been shifting, suggesting periods of rising and falling inflation rates. Such shifts in the trend could be attributed to various macroeconomic factors, including changes in monetary policies, technological advancements, and shifts in the global economy.
+
+-   **Economic Implications**: A dynamic trend indicates that the economic environment is evolving. The factors contributing to these changes could be multifaceted:
+
+    -   **Monetary Policy**: Central banks might be adjusting interest rates or employing other tools that impact the money supply and, consequently, the inflation rate.
+
+    -   **Global Factors**: Changes in the global economic landscape, such as shifts in global trade patterns, can influence domestic inflation rates.
+
+    -   **Structural Changes**: Technological innovations or significant market entries and exits can cause long-term changes in demand and supply dynamics, impacting prices.
+
+#### **2. Seasonal Component**:
+
+-   **Visual Representation**: Green line chart titled "Seasonal Component of Monthly Inflation Rate".
+
+-   **Interpretation**: The consistency in the seasonal component suggests that there are regular and predictable fluctuations in the inflation rate that recur at specific intervals. These fluctuations remain fairly constant over time, indicating well-established seasonal patterns.
+
+-   **Economic Implications**: A constant seasonal component indicates predictable, recurring influences on inflation:
+
+    -   **Consumer Behavior**: As before, regular shopping seasons, holidays, or other annual events might drive these patterns.
+
+    -   **Supply Side Regularities**: Seasonal factors such as agricultural cycles or periodic maintenance shutdowns in industries might be at play.
+
+#### **3. Random (or Residual) Component**:
+
+-   **Visual Representation**: Red line chart titled "Random Component of Monthly Inflation Rate".
+
+-   **Interpretation**: The variability in the random component over time indicates that there are irregular factors or shocks influencing the inflation rate. These are events or factors that aren't accounted for by the trend or seasonal components.
+
+-   **Economic Implications**: A varying random component suggests an economy that, while having predictable trend and seasonal elements, is also influenced by unexpected events:
+
+    -   **External Shocks**: These could be stronger or more frequent than initially thought, causing more pronounced variations in the data.
+
+    -   **Short-term Dynamics**: The economy might be reacting to short-lived news, events, or temporary market conditions that cause abrupt changes in prices.
+
+    -   **Data Collection**: Sometimes, irregularities in data collection or adjustments can lead to variations that appear random.
+
+#### **Conclusion**:
+
+The decomposition provides a layered understanding of the inflation rate's behavior. The changing trend suggests an evolving economic environment, the consistent seasonality provides predictability, and the varying random component indicates the presence of unforeseen factors or events.
+
+## **Autocorrelation Functions of Monthly Inflation**
+
+Autocorrelation functions, both ACF and PACF, provide an understanding of the correlation of a series with its lags. This is crucial for building and diagnosing time series models:
+
+-   **ACF (Autocorrelation Function)**: It measures the linear relationship between the time series and its lagged values.
+
+-   **PACF (Partial Autocorrelation Function)**: It measures the correlation between the time series and its lagged values after removing the effects of previous lags.
+
+```{r}
+# Compute ACF and PACF
+acf_vals <- acf(inflation_monthly_ts, plot = FALSE)
+pacf_vals <- pacf(inflation_monthly_ts, plot = FALSE)
+
+# ACF Plot
+plot_ly(y = acf_vals$acf[-1], type = 'scatter', mode = 'lines+markers', name = 'ACF') %>%
+  layout(title = "ACF of Monthly Inflation Rate",
+         xaxis = list(title = "Lag"),
+         yaxis = list(title = "ACF Value"))
+
+# PACF Plot
+plot_ly(y = pacf_vals$acf[-1], type = 'scatter', mode = 'lines+markers', name = 'PACF') %>%
+  layout(title = "PACF of Monthly Inflation Rate",
+         xaxis = list(title = "Lag"),
+         yaxis = list(title = "PACF Value"))
+
+```
+
+The Autocorrelation Function (ACF) and Partial Autocorrelation Function (PACF) are integral tools in time series analysis, especially when characterizing and identifying the nature of a given series. In this context, we're inspecting the Monthly Inflation Rate.
+
+**Autocorrelation Function (ACF)**:
+
+-   The ACF plot graphically presents the correlation between the inflation rate and its own lags. By visually inspecting the ACF plot for the inflation rate, one can discern patterns and structures hidden within the data.
+
+-   A clear observation is the series' non-stationary nature. For a stationary time series, we would expect the ACF values to decline relatively quickly and hover around zero. In the case of inflation, however, there's a lingering correlation across multiple lags, suggesting that the series might benefit from differencing or other transformations to achieve stationarity.
+
+-   No clear seasonality in inflation is apparent from the ACF plot, as we don't observe recurring significant spikes at regular intervals. This means that inflation rates might not be inherently tied to specific months or seasons in a predictable pattern.
+
+**Partial Autocorrelation Function (PACF)**:
+
+-   The PACF, on the other hand, provides insights into the direct effect of previous lags on the current observation, after discounting the influence of intermediate lags. For the inflation data, we notice that the PACF plot shows significant autocorrelations only for the initial few lags, particularly lags 1 and 2.
+
+-   The rapid decay and oscillation around zero in the PACF plot after the initial lags suggests that the inflation rate might be influenced primarily by its very recent past values, rather than longer historical values. This potentially points to an autoregressive nature of the inflation series of order 1 or 2.
+
+-   The fact that the PACF values remain within the confidence bands (typically represented by blue dashed lines, though not explicitly mentioned here) from lag 2 onwards suggests that these correlations are not statistically significant, reinforcing the potential autoregressive nature hinted at the initial lags.
+
+**Conclusion**: Given the behavior observed in the ACF and PACF plots, the Monthly Inflation Rate appears to possess a non-stationary nature. While there isn't a clear seasonal pattern, the data does hint towards an autoregressive process of order 1 or 2, given the significant initial lags in the PACF plot. Policymakers and financial analysts can use this insight to understand that recent changes in inflation are more influential than distant historical rates. It also underscores the importance of regular monitoring and swift policy adjustments to address short-term inflationary pressures.
+
+## **ADF Test of Monthly Inflation**
+
+```{r, warning=FALSE}
+adf_test <- adf.test(inflation_monthly_ts)
+print(adf_test)
+
+```
+
+The Augmented Dickey-Fuller (ADF) test is a commonly used technique to determine the stationarity of a time series. The stationarity of a time series means that its properties do not change over time, i.e., the mean, variance, and covariance are constant over time. The ADF test evaluates the null hypothesis that a unit root is present in a time series sample, which implies non-stationarity.
+
+**Dickey-Fuller Value**:
+
+-   The Dickey-Fuller test statistic value is -5.8342. This value is more negative than the typical critical values (e.g., -3.5, -2.9, -2.6 for 1%, 5%, and 10% significance levels, respectively, though exact values can vary based on sample size and other factors).
+
+**Lag Order**:
+
+-   The lag order of 10 indicates that 10 lags of the dependent variable (inflation_monthly_ts in this case) were included in the test regression. The Augmented Dickey-Fuller test introduces lags to account for autocorrelation and ensure that the residuals (errors) of the regression are white noise.
+
+**p-value**:
+
+-   A p-value of 0.01 (or 1% level of significance) is quite low, typically below common significance levels such as 0.05 or 0.10. A low p-value like this leads to the rejection of the null hypothesis.
+
+**Conclusion**: Given the Dickey-Fuller test statistic value of -5.8342 and a p-value of 0.01, we reject the null hypothesis that a unit root is present in the series at the 1% significance level. The data provides strong evidence to suggest that the time series **`inflation_monthly_ts`** is stationary. This means that the mean, variance, and autocorrelation structure of the inflation rate do not change over time.
+
+## **Detrending Techniques for Monthly Inflation**
+
+Detrending is an essential pre-processing step for many time series analyses:
+
+-   **First-order Differencing**: It removes the trend in the time series by taking the difference between consecutive observations.
+
+-   **Trend Model Fitting**: By fitting a linear trend model, one can extract the trend and study the detrended series.
+
+```{r}
+# First order difference
+inflation_diff <- diff(inflation_monthly_ts)
+
+# Plot
+plot(inflation_diff, main="Detrended Inflation Data using First-order Differencing", ylab="First-order Differences")
+
+```
+
+```{r, message=FALSE}
+# Fit a trend model
+trend_model <- lm(inflation_monthly_ts ~ time(inflation_monthly_ts))
+summary(trend_model)
+
+# Convert to data frame
+detrended_df <- data.frame(
+  Date = time(inflation_monthly_ts),
+  DetrendedValue = resid(trend_model)
+)
+
+# Plot using ggplot
+ggplot(data = detrended_df, aes(x = Date, y = DetrendedValue)) +
+  geom_line() +
+  ggtitle("Detrended Inflation Data by Subtracting Fitted Trend") +
+  ylab("Detrended Values") +
+  xlab("Date") +
+  theme_minimal()
+
+
+```
+
+The output from the linear regression model indicates:
+
+-   The formula for the linear trend fitted to the data:
+
+    Inflation =−1.2033+0.0007432×time
+
+-   This suggests a very slight upward trend in inflation over time, but the coefficient of time (0.0007432) is small and not statistically significant given its p-value (0.176).
+
+-   Residuals, which are the differences between the observed values and the values predicted by the model, vary between -3.4333 and 5.4725. These residuals, when plotted, represent the detrended series. The median of the residuals is quite close to zero (-0.0329), which is a good indication, but the range is relatively wide.
+
+-   The R-square value, which represents the proportion of variation in the inflation rate that can be explained by time, is very low (0.001382 or 0.1382%). This means that the linear model doesn't capture much of the variability in the inflation rate.
+
+The comparison between the first-order differencing and the trend model fitting techniques reveals interesting insights:
+
+-   The detrended series from the linear model looks quite similar to the original inflation series, suggesting that the model might not have efficiently captured and removed the trend. The low �2R2 value further supports this point.
+
+-   The mention of a quadratic model or first differencing indicates that the trend in inflation is possibly nonlinear. A quadratic model, with its curved line fit, might be better suited to capture this.
+
+-   Even after removing the trend, if seasonality is evident in the detrended data, it indicates that the original time series comprises multiple components, and just detrending isn't sufficient for analysis.
+
+## **Autocorrelation after Detrending Monthly Inflation**
+
+```{r}
+# ACF
+acf(inflation_diff, main="ACF of First-order Differenced Monthly Inflation")
+
+# PACF
+pacf(inflation_diff, main="PACF of First-order Differenced Monthly Inflation")
+```
+
+**Conclusion**: Based on our analysis, the first-order differenced series emerges as the preferred choice for building autoregressive models, owing to the enhanced stationarity it offers. However, the nuances captured by the original series, as suggested by its PACF plot, should not be overlooked. It might be valuable to also explore modeling the original series directly with AR models, potentially tapping into insights that the differenced series might not capture fully. In essence, while the differenced series presents a clearer and more straightforward path, the original series holds an allure of depth and complexity that might prove beneficial in understanding the intricate dynamics of inflation.
+
+## **Simple Moving Average Smoothing**
+
+Moving averages smooth out short-term fluctuations and highlight longer-term trends:
+
+-   **3-Point, 5-Point, 7-Point, and 9-Point Moving Averages**: These visualizations provide smoothed curves, with each MA capturing different degrees of fluctuations.
+
+```{r, message=FALSE, warning=FALSE}
+# Compute the 12-month moving average using the filter function from the stats package
+sma_12 <- stats::filter(inflation_monthly_ts, rep(1/12, 12), sides=2)
+
+
+# Create a data frame for plotting
+data_plot <- data.frame(Date = time(inflation_monthly_ts),
+                        Inflation = as.numeric(inflation_monthly_ts),
+                        SMA_12 = as.numeric(sma_12))
+
+# Compute 3-MA
+ma3 <- autoplot(inflation_monthly_ts, series="Data") +
+  autolayer(ma(inflation_monthly_ts,3), series="3-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("3-MA: Monthly Inflation Rate") +
+  scale_colour_manual(values=c("Data"="grey50","3-MA"="red"),
+                      breaks=c("Data","3-MA"))+
+   theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+
+# Compute 5-MA
+ma5 <- autoplot(inflation_monthly_ts, series="Data") +
+  autolayer(ma(inflation_monthly_ts,5), series="5-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("5-MA: Monthly Inflation Rate") +
+  scale_colour_manual(values=c("Data"="grey50","5-MA"="red"),
+                      breaks=c("Data","5-MA"))+ theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+
+# Compute 7-MA
+ma7 <- autoplot(inflation_monthly_ts, series="Data") +
+  autolayer(ma(inflation_monthly_ts,7), series="7-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("7-MA: Monthly Inflation Rate") +
+  scale_colour_manual(values=c("Data"="grey50","7-MA"="red"),
+                      breaks=c("Data","7-MA"))+ theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+
+# Compute 9-MA
+ma9 <- autoplot(inflation_monthly_ts, series="Data") +
+  autolayer(ma(inflation_monthly_ts,9), series="9-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("9-MA: Monthly Inflation Rate") +
+  scale_colour_manual(values=c("Data"="grey50","9-MA"="red"),
+                      breaks=c("Data","9-MA"))+ theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+
+# Arrange plots in a grid
+grid.arrange(ma3, ma5, ma7, ma9, nrow = 2, ncol=2)
+
+```
+
+**Key Observations**:
+
+1.  **Consistency in Data and MA Values**: A striking feature across all the MA plots is the closeness between the actual inflation data and the computed moving averages. This implies that short-term fluctuations in the inflation data are minimal, and the general trend of inflation has been consistent over the time period observed.
+
+2.  **Granularity of Smoothing**:
+
+    -   **3-Point MA**: Being the most granular of all the MAs used, the 3-Point MA closely trails the actual data, capturing most of its minor fluctuations. This might be helpful in environments where understanding small changes is critical.
+
+    -   **5-Point and 7-Point MA**: As we increase the window size, the smoothed line becomes less reactive to short-term fluctuations, offering a more generalized view. The 5-Point and 7-Point MA lines provide a balanced perspective, revealing the broader trend without being overly smoothed.
+
+    -   **9-Point MA**: The 9-Point MA, being the broadest, offers the most generalized view of the inflation trend. It suppresses most of the minor variations, focusing primarily on long-term movements.
+
+3.  **Underlying Trend**: The consistent proximity of the MAs to the original data and the overlapping nature of various MAs suggest that the inflation rate has been relatively stable. There haven't been drastic shifts or volatile periods that deviate significantly from the central trajectory.
+
+4.  **Usability**: The selection of a particular MA for further analysis or modeling would depend on the specific research question or business problem. For instance, if the goal is to understand very recent shifts in inflation, the 3-Point or 5-Point MAs might be more informative. However, if one is looking at longer-term economic strategies, the 7-Point or 9-Point MAs can offer a clearer picture by emphasizing broader movements and de-emphasizing short-term noise.
+
+**Conclusion**: The SMA analysis on the monthly inflation data provides a rich perspective on the behavior of inflation over time. The close alignment of the moving averages with the actual data signifies a steady, predictable trend in inflation, with minimal short-term disruptions.
+
+## **Moving Average Smoothing with Windowing (2x4)**
+
+-   **4-Point and 2x4-Point Moving Averages**: This helps in understanding the short-term and long-term patterns respectively.
+
+```{r, warning=FALSE}
+inflation_monthly_ts_2 <- window(inflation_monthly_ts, start= c(1913, 1))
+
+# 4-point moving average
+ma4 <- ma(inflation_monthly_ts_2, order=4, centre=FALSE)
+
+# 2x4-point moving average
+ma2x4 <- ma(inflation_monthly_ts_2, order=4, centre=TRUE)
+
+MA_2x4 = data.frame(inflation_monthly_ts_2, ma4, ma2x4)
+
+# Plot
+autoplot(inflation_monthly_ts_2, series="Data") +
+  autolayer(ma(inflation_monthly_ts_2, order=4, centre=FALSE), series="4-MA") +
+  autolayer(ma(inflation_monthly_ts_2, order=4, centre=TRUE), series="2x4-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("Monthly Inflation Rate Over Time") +
+  scale_colour_manual(values=c("Data"="grey","4-MA"="red","2x4-MA"="blue"),
+                      breaks=c("Data","4-MA","2x4-MA")) +
+  theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+
+
+```
+
+1.  **New Time Frame**: The decision to window the data starting from 1913 allows us to focus on a specific period which could have its unique characteristics or may be deemed more relevant to the current analysis.
+
+2.  **Understanding 4-MA and 2x4-MA**:
+
+    -   **4-Point MA**: The 4-Point Moving Average (4-MA) provides a relatively granular smoothing of the data. Given that it's not centered, it tends to lag the actual data slightly and can be influenced more by the recent values in the series.
+
+    -   **2x4-Point MA**: This technique involves applying a centered 4-month moving average, followed by another centered 2-month moving average. This "moving average of a moving average" approach, especially when **`m`** is even, is used to make the smoothing symmetric. The 2x4-MA smoothens the series further, thereby minimizing seasonal fluctuations and revealing the broader trend more clearly.
+
+3.  **Symmetry in Moving Averages**: When the moving average order is even (like 4 in this case), the average isn't naturally symmetric around the time point being estimated. By applying a secondary 2-month centered moving average (2x4-MA), symmetry is achieved, leading to a smoother representation that centers better with the original data points.
+
+4.  **Residual Seasonality**: Despite the double smoothing with 2x4-MA, there appears to be some seasonality or cyclic patterns still present in the smoothed series. This suggests that the chosen moving average techniques, although effective to some extent, aren't capturing all the underlying patterns in the data.
+
+5.  **Next Steps and Improvements**: The persisting seasonality in the smoothed overlay hints at the complexity of the inflation data's underlying patterns. To better represent the data and remove this seasonality, alternative moving averaging windows or more advanced time series decomposition techniques might be necessary. Moreover, the choice of smoothing technique should ideally align with the goal of the analysis---whether it's to uncover the underlying trend, adjust for seasonality, or prepare the series for forecasting.
+
+**Conclusion**: The inflation data from 1913 onwards provides a valuable look into historical economic trends. The application of both 4-MA and 2x4-MA offers varying degrees of smoothing, with each revealing different aspects of the data's structure.
+
+## **Moving Average Smoothing with Windowing (2x6)**
+
+-   **6-Point and 2x6-Point Moving Averages**: Similarly, they provide insights into different aspects of the data's patterns.
+
+```{r, warning=FALSE}
+# Calculate the 6-point moving average and 2x6-point moving average
+ma6 <- ma(inflation_monthly_ts_2, order=6, centre=FALSE)
+ma2x6 <- ma(inflation_monthly_ts_2, order=6, centre=TRUE)
+MA_2x6 = data.frame(inflation_monthly_ts_2, ma6, ma2x6)
+
+# Plot
+autoplot(inflation_monthly_ts_2, series="Data") +
+  autolayer(ma(inflation_monthly_ts_2, order=6, centre=FALSE), series="6-MA") +
+  autolayer(ma(inflation_monthly_ts_2, order=6, centre=TRUE), series="2x6-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("Monthly Inflation Rate Over Time with 6-Point and 2x6-Point MA") +
+  scale_colour_manual(values=c("Data"="grey","6-MA"="red","2x6-MA"="blue"),
+                      breaks=c("Data","6-MA","2x6-MA"))+
+   theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+```
+
+**Key Insights**:
+
+1.  **Extended Smoothing with 6-MA**: A 6-month centered moving average (6-MA) extends the smoothing window, allowing for the minimization of shorter-term fluctuations. This broader window can be particularly effective in teasing out more pronounced seasonality or semi-annual trends inherent in the inflation data.
+
+2.  **Centered Nature of 6-MA**: Given that the moving average is centered, it means that the average value at a given time point is computed by considering an equal number of months before and after that point. This symmetry ensures that the smoothed value aligns well with the central month, offering a more accurate representation of trends around that time.
+
+3.  **Comparison with Previous Methods**: Compared to the previously employed 4-MA and 2x4-MA methods, the 6-MA provides a balance. It offers a more extended smoothing than the 4-MA, thereby capturing broader trends. Yet, it's not as granular as the 2x4-MA, making it a potential middle ground that retains some shorter-term nuances while highlighting more overarching trends.
+
+4.  **Residual Patterns**: While the 6-MA will likely remove many of the short-term fluctuations seen in the monthly inflation data, it's essential to evaluate how well it adjusts for persisting cyclic patterns or any remaining seasonality. There might still be traces of longer-term trends or patterns that even the 6-MA might not entirely iron out.
+
+5.  **Practical Implications**: Adopting a 6-MA could be particularly beneficial if analysts aim to understand semi-annual inflation behaviors or want to derive insights relevant for bi-annual strategic planning. However, for capturing more granular monthly changes, this method might smooth out too much detail.
+
+**Conclusion**: Using a 6-month centered moving average to smooth out the inflation data allows for a more holistic view of semi-annual trends in the economic landscape. This extended smoothing can provide valuable insights, especially when the objective is to uncover broader patterns rather than monthly fluctuations.
+
+## **Moving Average Smoothing with Windowing (2x8)**
+
+-   **8-Point and 2x8-Point Moving Averages**: Similarly, they provide insights into different aspects of the data's patterns.
+
+```{r, warning=FALSE}
+# Calculate the 8-point moving average and 2x8-point moving average
+ma8 <- ma(inflation_monthly_ts_2, order=8, centre=FALSE)
+ma2x8 <- ma(inflation_monthly_ts_2, order=8, centre=TRUE)
+MA_2x8 = data.frame(inflation_monthly_ts_2, ma8, ma2x8)
+
+# Plot
+autoplot(inflation_monthly_ts_2, series="Data") +
+  autolayer(ma(inflation_monthly_ts_2, order=8, centre=FALSE), series="8-MA") +
+  autolayer(ma(inflation_monthly_ts_2, order=8, centre=TRUE), series="2x8-MA") +
+  xlab("Year") + ylab("Inflation Rate (%)") +
+  ggtitle("Monthly Inflation Rate Over Time with 8-Point and 2x8-Point MA") +
+  scale_colour_manual(values=c("Data"="grey","8-MA"="red","2x8-MA"="blue"),
+                      breaks=c("Data","8-MA","2x8-MA"))+
+   theme_minimal() +  # This theme provides a minimal styling
+  theme(
+    #panel.background = element_blank(),  # Remove background
+    panel.grid.major = element_blank(),   # Remove major grid
+    #panel.grid.minor = element_blank(),   # Remove minor grid
+    strip.background = element_blank()    # Remove background for facet labels (if any)
+  )
+```
+
+**Key Insights**:
+
+1.  **Benefits of Extended Smoothing**: The employment of a centered 8-month moving average is a step further into the domain of smoothing. By increasing the moving average window, you're essentially amplifying the degree of smoothing, which can be beneficial to more clearly highlight longer-term trends in the data.
+
+2.  **Comparison to Previous Methods**: When contrasted with the prior 4-MA and 2x4-MA approaches, the 8-month moving average produces a smoother curve. This curve will be less sensitive to monthly fluctuations and will more distinctly reveal broader, overarching patterns. The longer window diminishes the influence of short-term fluctuations, seasonal or otherwise, to provide a clearer picture of long-term tendencies.
+
+3.  **Implications of Centering**: Opting for a centered moving average, especially with an 8-month window, ensures that the smoothed value is symmetrically aligned with the original data points in time. This alignment aids in preserving the chronological essence of the time series, preventing any potential misleading lags that could be introduced with trailing moving averages.
+
+4.  **Seeking Optimal Smoothing**: Your pursuit of the centered 8-month moving average stems from an observation that the prior techniques, while effective, still left some room for capturing longer-term dynamics better. The inflation data, being multifaceted in nature, demands such iterative refinement in its representation.
+
+5.  **Residual Patterns**: As with any smoothing technique, it's pivotal to assess the residuals or what's left after the smoothing. If the 8-month moving average does a commendable job, it will leave behind noise with minimal discernible patterns. However, any remaining systematic pattern might indicate a need for further modeling or alternative techniques.
+
+**Conclusion**: The use of a centered 8-month moving average on the monthly inflation data signifies an analytical dedication to uncovering deeper, more subtle trends beneath the monthly variations. While the prior methods provided valuable insights into the series' structure, the adoption of this extended smoothing technique aims to offer an even clearer lens into the long-term trajectories of inflation. This continued exploration showcases the dynamic nature of inflation trends and the necessity of iterative, refined techniques to genuinely grasp its intricacies.
+
+Exploring the inflation rates through various visualizations and analyses equips us with a deeper understanding of its patterns, trends, and underlying components. The tools and techniques applied here can also be extended to other time series datasets for a comprehensive analysis.

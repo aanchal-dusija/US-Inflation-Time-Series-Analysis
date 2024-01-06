@@ -1,0 +1,2256 @@
+---
+title: Deep Learning for Time Series
+self-contained: true
+format:
+  html:
+    page-layout: full
+    code-fold: show
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+jupyter: python3
+---
+
+## Summary
+
+In this section, we shift our focus to the analysis of monthly inflation rates in the United States using Deep Learning techniques, building upon the principles applied in previous sections where time-series models were used for financial and other types of data. Our objective is to predict the monthly inflation rates using the same univariate time-series data framework previously utilized for ARMA/ARIMA/SARIMA models.
+
+For this purpose, we will employ various Recurrent Neural Network (RNN) architectures, including Dense RNN, Gated Recurrent Unit (GRU), and Long Short-Term Memory Network (LSTM). These models will be tested both with and without the implementation of L2 regularization. L2 regularization is a technique used to prevent overfitting in machine learning models by penalizing larger weights in the model's parameters, encouraging them to move towards zero.
+
+By using these advanced deep learning models, we aim to assess their performance in predicting monthly inflation rates and compare their effectiveness against traditional univariate time-series models like ARIMA and SARIMA. This comparative analysis will help us understand the strengths and limitations of both traditional and deep learning approaches in the context of economic data.
+
+Furthermore, we will explore the impact of regularization on the RNN models' predictions, evaluate how far into the future these models can reliably forecast inflation rates, and compare the outcomes with those obtained from traditional ARMA/ARIMA models.
+
+To implement these models, we will use the Keras library in Python, which serves as an interface for the TensorFlow framework. Our approach will be guided by the methodologies and insights presented in Francois Chollet's "Deep Learning in Python, Second Edition" (Chollet 2021), adapting and applying these concepts specifically to the domain of monthly inflation rate analysis in the United States.
+
+## Training Parameter
+
+In this methodology, we outline the key parameters essential for defining and training our models:
+
+[Recurrent Hidden Units]{.underline}: The count of hidden units in the Simple RNN layer plays a crucial role in the model's complexity and its ability to learn features. More hidden units enable learning more complex features, but also increase the risk of overfitting due to a higher number of parameters. We typically use a set number of units across all models.
+
+[Epochs]{.underline}: An epoch represents a complete cycle of training the model on the entire dataset, including both forward and backward passes. We standardize the training process by setting the epoch count to 100 for consistency across all models.
+
+[Fractional Batch Size (f_batch)]{.underline}: This parameter determines the batch size as a fraction of the total training dataset size. Using a fraction for batch sizing enhances parameter updating efficiency. We have fixed this fraction at 20% (0.2) of the training data.
+
+[Optimizer]{.underline}: The choice of optimizer is critical for updating model parameters. We use the RMSprop optimizer, known for its effectiveness in deep learning and recurrent neural networks. It's preferred over other optimizers like Adam and Nadam for our models.
+
+[Validation Split]{.underline}: This fraction of the training data is set aside for validation purposes, aiding in monitoring model performance and mitigating overfitting. We allocate 20% of our training dataset for validation.
+
+[Activation Function]{.underline}: The activation function is pivotal, especially considering the vanishing gradient issue in RNNs. The tanh function is preferred due to its ability to maintain gradients in a linear state longer than ReLU. However, for the Bidirectional LSTM model, we opt for ReLU due to its unbounded positive output, contrasting tanh's bounded nature on both positive and negative sides.
+
+These parameters form the backbone of our training methodology, ensuring consistency and robustness across different model architectures.
+
+## Normalizing the data
+
+When handling Deep Learning models for analyzing monthly inflation data, normalizing the input features is a critical step. Even with univariate data like monthly inflation rates, it is essential to scale the values, typically within a 0-1 range. This normalization process helps in managing the input data's scale, ensuring it is suitable for feeding into a neural network. Large or heterogeneous data values can lead to disproportionately large gradient updates, hindering the network's ability to converge.
+
+Here are the key benefits of normalizing the monthly inflation data:
+
+1.  **Mitigates Vanishing or Exploding Gradients**: Differing scales in input features can adversely affect the gradient flow during backpropagation in neural networks. If the features have a wide range of scales, gradients corresponding to smaller-scaled features might become negligible or zero, slowing down or even stalling the network's learning process.
+
+2.  **Facilitates Efficient Optimization**: By normalizing input features, the optimization process becomes more streamlined. Consistent scales across features ensure that gradients do not vary wildly, helping avoid local minima traps and accelerating the network's convergence.
+
+3.  **Enhances Generalization**: Normalizing features can improve the model's ability to generalize. It minimizes the impact of outliers or extreme values in the input data, leading to a more balanced and less overfit model. This is particularly crucial for data like inflation rates, where outliers can significantly skew the model's performance.
+
+In conclusion, normalizing the monthly inflation data into a consistent range like 0-1 is a vital preparatory step for deep learning model training, leading to better performance and more reliable predictions.
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import SimpleRNN, Dense, LSTM, GRU, Bidirectional
+from tensorflow.keras import regularizers
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import RMSprop
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+import sys
+import matplotlib.pyplot as plt
+import random
+import warnings
+warnings.filterwarnings('ignore')
+random.seed(123)
+```
+
+```{python}
+import pandas_datareader as pdr
+import datetime
+
+start = datetime.datetime(1960, 1, 1) # starting date
+end = datetime.datetime.now() # current date
+
+# Fetching US Inflation data from FRED
+inflation_data = pdr.get_data_fred('CPIAUCSL', start, end)
+
+import numpy as np
+import pandas as pd
+
+# Assuming 'inflation_data' is your DataFrame and it has CPI values in a column named 'CPIAUCSL'
+inflation_data['CPIAUCSL'] = pd.to_numeric(inflation_data['CPIAUCSL'], errors='coerce')
+inflation_monthly = np.diff(np.log(inflation_data['CPIAUCSL'])) * 100
+
+# Convert the result to a DataFrame if needed
+inflation_monthly_df = pd.DataFrame(inflation_monthly, columns=['Monthly Inflation'], index=inflation_data.index[1:])
+
+# Split into test and train
+# Calculate the split index
+split_idx = int(len(inflation_monthly_df) * 0.8)
+
+# Split the data into training and testing sets
+train = inflation_monthly_df.iloc[:split_idx]
+test = inflation_monthly_df.iloc[split_idx:]
+
+# normalize values
+scaler = MinMaxScaler(feature_range=(0, 1))
+train_data = scaler.fit_transform(train).flatten()
+test_data = scaler.fit_transform(test).flatten()
+
+print("Train Data Shape: ", train_data.shape)
+print("Test Data Shape: ", test_data.shape)
+```
+
+```{python}
+import plotly.io as pio
+pio.renderers.default = "plotly_mimetype+notebook_connected"
+import plotly.express as px
+
+# UTILITY
+def plotly_line_plot(t, y, title="Plot", x_label="t: time (months)", y_label="y(t): Response variable"):
+    # GENERATE PLOTLY FIGURE
+    fig = px.line(x=t[0], y=y[0], title=title, render_mode='SVG')  
+    
+    # ADD MORE
+    for i in range(1, len(y)):
+        if len(t[i]) == 1:
+            fig.add_scatter(x=t[i], y=y[i], name='Training' if i==1 else 'Validation')
+        else:
+            fig.add_scatter(x=t[i], y=y[i], mode='lines', name='Training' if i==1 else 'Validation')
+
+    fig.update_layout(
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        template="plotly_white",
+        showlegend=True
+    )
+    fig.show()
+```
+
+```{python}
+# PREPARE THE INPUT X AND TARGET Y
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+
+print("testX shape:", testX.shape, "testY shape:", testY.shape)
+print("trainX shape:", trainX.shape, "trainY shape:", trainY.shape)
+print(type(trainX))
+```
+
+## Training a Simple RNN
+
+A recurrent neural network (RNN) processes sequences by iterating through the sequence elements and maintaining a state that contains information relative to what it has seen so far. In effect, an RNN is a type of neural network that has an internal loop. The state of the RNN is reset between processing two different, independent sequences (such as two samples in a batch), so we still consider one sequence to be a single data point: a single input to the network. What changes is that this data point is no longer processed in a single step; rather, the network internally loops over sequence elements. In summary, an RNN is a for loop that reuses quantities computed during the previous iteration of the loop, nothing more. (Chollet 2021)
+
+### Model and Training Parameters
+
+The input to the model is a 3D tensor with shape (batch_size, timesteps, input_dim). The output of the RNN layer is fed into a Dense layer with a single output unit, which is used to generate a scalar output.
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+```{python}
+#CREATE MODEL
+model = Sequential()
+model.add(SimpleRNN(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+activation='tanh')
+          ) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+### Train Model and Visualze Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+## Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_1 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_1 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_1**2.0,train_rmse_1))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_1**2.0,test_rmse_1))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+
+```
+
+## Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+## Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+# PLOT THE RESULT
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The train RMSE (Root Mean Squared Error) outputted by the Simple RNN model is {train_rmse_1:.2f} and test RMSE is {test_rmse_1:.2f}
+"""
+))
+```
+
+The parity plot provides further evidence of the model's accuracy and suggests that the model's performance is better for smaller Y values, as the deviation from the line increases for larger Y values. This is likely due to the fact that the model is trained on a larger number of smaller Y values (the data contains a lot of 0 values), and thus is better at predicting smaller Y values. The Visualize Predictions plot shows that the model is able to predict the general trend of the data, and is able to predict the peaks and valleys of the data. The model does, to an extent, capture the seasonality of the data but not completely, implying overfitting! Let's see if we can improve the model's performance by adding L2 regularization.
+
+## Training a Simple RNN with L2 Regularization
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+
+# normalize values
+
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100 
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+### Create Simple RNN Model With L2 Regularization
+
+```{python}
+#CREATE MODEL
+model = Sequential()
+model.add(SimpleRNN(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='tanh')
+          ) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+## Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+## Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_2 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_2 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_2**2.0,train_rmse_2))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_2**2.0,test_rmse_2))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+## Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+## Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+With L2 Regularization (lambda = 0.01) added to the Simple RNN model, the Train RMSE remained constant at 
+{train_rmse_1:.2f} but test RMSE decreased from {test_rmse_1:.2f} to {test_rmse_2:.2f}.
+"""
+))
+```
+
+I experimented with 50 epochs at first, then worked my way up to 100. Using the same number of epochs as previously, it appears that the regularization penalty was too great in comparison to the model's capacity, as evidenced by the higher RMSE. The model had less time to overfit to the training set when the number of epochs was decreased, and the regularization penalty was able to improve the model's ability to generalize.
+
+## Training and Evaluating a GRU with L2 Regularization
+
+The GRU is very similar to LSTM---you can think of it as a slightly simpler, streamlined version of the LSTM architecture. It was introduced in 2014 by Cho et al. and have gained popularity in the last few years. GRU's have become popular alternatives to LSTMs because they combine the forget and input gates into a single "update gate." Therefore, it uses gating mechanisms to selectively update and reset the hidden state, allowing it to learn long-term dependencies more effectively. [@chollet2021deep]
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+
+# normalize values
+
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+### Create GRU Model With L2 Regularization
+
+```{python}
+#CREATE MODEL
+model = Sequential()
+model.add(GRU(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='tanh')
+          ) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+## Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+## Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+# 
+# # normalize values
+# 
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+# Split the data into training and testing sets
+train = inflation_monthly_df.iloc[:split_idx]
+test = inflation_monthly_df.iloc[split_idx:]
+
+# normalize values
+scaler = MinMaxScaler(feature_range=(0, 1))
+train_data = scaler.fit_transform(train).flatten()
+test_data = scaler.fit_transform(test).flatten()
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_3 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_3 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_3**2.0,train_rmse_3))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_3**2.0,test_rmse_3))
+
+# # PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+## Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+## Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind];
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show();
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');
+    plt.plot(Y_ind, unnormalized_train_predict,'-');
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The GRU with L2 Regularization performs better, as observed by its Train RMSE of {train_rmse_3:.2f} and test RMSE of {test_rmse_3:.2f}, a slight drop from that of the Simple RNN models.
+"""
+))
+```
+
+Although this is a good sign that a more complex model performs better, the prediction plot remains fairly similar compared to those of the RNN models.  Let's try a Bidirectional GRU model, keeping the same number of epochs (100), to see if we can further improve the model's performance.
+
+## Training and Evaluating a Bidirectional GRU 
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+# 
+# # normalize values
+# 
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+### Create Bidirectional GRU
+
+```{python}
+#CREATE MODEL
+model = Sequential()
+model.add(Bidirectional(GRU(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+activation='tanh')
+          )) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# BUILD THE MODEL 
+model.build(input_shape=(None, trainX.shape[1], trainX.shape[2]))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+### Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+:::panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+## MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_4 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_4 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_4**2.0,train_rmse_4))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_4**2.0,test_rmse_4))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+### Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The Bidirectional GRU with no regularization performs worse than not only the GRU with L2 Regularization but also the Simple RNN models! Its Train RMSE of {train_rmse_4:.2f} and test RMSE of {test_rmse_4:.2f} are worse than the previous 3 models tested. This is likely due to the fact that the Bidirectional GRU is a more complex model and thus requires more regularization to prevent overfitting. Let's introduce regularization again, but this time with a Stacked Bidirectional GRU.
+"""
+))
+```
+
+## Training and Evaluating a Stacked Bidirectional GRU with L2 Regularization
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+# 
+# # normalize values
+# 
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100 
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+callback = EarlyStopping(monitor='loss', patience=3) # This callback will stop the training when there is no improvement in the loss for three consecutive epochs
+```
+
+### Create Stacked Bidirectional GRU with L2 Regularization
+
+```{python}
+model = Sequential()
+model.add(Bidirectional(GRU(
+recurrent_hidden_units, 
+return_sequences=True,
+input_shape=(trainX.shape[1],trainX.shape[2]))
+          )) 
+model.add(Bidirectional(GRU(
+recurrent_hidden_units,
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='relu')
+          )) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# BUILD THE MODEL 
+model.build(input_shape=(None, trainX.shape[1], trainX.shape[2]))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+### Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+callbacks=[callback], #early stopping
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_5 = np.sqrt(mean_squared_error(trainY, train_predict)) 
+test_rmse_5 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_5**2.0,train_rmse_5))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_5**2.0,test_rmse_5))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+## Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+## Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+When using the Stacked Bidirectional GRU, it is imperative to add `return_sequences=True` to stack recurrent layers on top of each other in Keras. All intermediate layers should return their full sequence of outputs (a rank-3 tensor) rather than their output at the last timestep.
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The output of this model is the worst out of all models so far, given its train RMSE of {train_rmse_5:.2f} and test RMSE of {test_rmse_5:.2f}. Therefore, the best GRU model for predicting inflation in the US is the GRU model with L2 Regularization.
+"""
+))
+```
+
+## Training and Evaluating a Bidirectional LSTM
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+# 
+# # normalize values
+# 
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100 
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+callback = EarlyStopping(monitor='loss', patience=3) # This callback will stop the training when there is no improvement in the loss for three consecutive epochs
+```
+
+### Create Bidirectional LSTM
+
+```{python}
+model = Sequential()
+model.add(Bidirectional(LSTM(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]),
+activation='tanh')
+          )) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# BUILD THE MODEL 
+model.build(input_shape=(None, trainX.shape[1], trainX.shape[2]))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+### Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+callbacks=[callback], #early stopping
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_6 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_6 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_6**2.0,train_rmse_6))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_6**2.0,test_rmse_6))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+### Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The Bidirectional LSTM with no regularization performs better than the Stacked GRU with L2 regularization, but worse than both the Bidirectional GRU and the GRU with L2 regularization. The train RMSE of this Bidirectional LSTM is {train_rmse_6:.2f} and test RMSE is {test_rmse_6:.2f}. The LSTM model, which is more complex than the GRU, is likely overfitting the data. The GRU model with L2 regularization is the best model so far. Let's see if we can improve the performance of the Bidirectional LSTM with L2 regularization by tuning the hyperparameters.
+"""
+))
+```
+
+## Training and Evaluating a Bidirectional LSTM with L2 Regularization
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+# 
+# train_data = np.array(train.astype('float32'))
+# test_data = np.array(test.astype('float32'))
+# 
+# # normalize values
+# 
+# scaler = MinMaxScaler(feature_range=(0, 1))
+# train_data = scaler.fit_transform(train_data).flatten()
+# test_data = scaler.fit_transform(test_data).flatten()
+
+#print(train_data.shape)
+#print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+### Model and Training Parameters
+
+```{python}
+#USER PARAM
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+callback = EarlyStopping(monitor='loss', patience=3) # This callback will stop the training when there is no improvement in the loss for three consecutive epochs
+```
+
+### Create Bidirectional LSTM with L2 Regularization
+
+```{python}
+model = Sequential()
+model.add(Bidirectional(LSTM(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]),
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='tanh')
+          )) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# BUILD THE MODEL 
+model.build(input_shape=(None, trainX.shape[1], trainX.shape[2]))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+model.summary()
+```
+
+### Train Model and Visualize Performance
+
+```{python}
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+callbacks=[callback], #early stopping
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+## Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse_7 = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse_7 = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse_7**2.0,train_rmse_7))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse_7**2.0,test_rmse_7))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+## Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(np.array(test.astype('float32')), p)
+trainX, trainY = get_XY(np.array(train.astype('float32')), p)
+
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, Y,'o', label='target')
+    plt.plot(X_ind, X,'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+from IPython.display import display, Markdown
+
+display(Markdown(
+f"""
+The Bidirectional LSTM with L2 Regularization outputted a train RMSE of {train_rmse_7:.2f} and test RMSE is {test_rmse_7:.2f}. It performs worse than Bidirectional LSTM without L2 Regularization and significantly worse than the Simple RNN with L2 Regularization and the GRU with L2 Regularization. Now, we can conclude that the GRU with L2 Regularization is the best performing model. But, will it be the best when predicting the Inflation for the next 5 years instead of 2 years as seen above? Let's find out. 
+"""
+))
+```
+
+# Final Results Table
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+# Define the header row of the table
+rmse_table = "| Model | L2 Regularization | Train RMSE | Test RMSE |\n"
+rmse_table += "|-------|----------------|------------|-----------|\n"
+rmse_table += f"| Simple RNN | No | {train_rmse_1:.2f} | {test_rmse_1:.2f} |\n"
+rmse_table += f"| Simple RNN | Yes | {train_rmse_2:.2f} | {test_rmse_2:.2f} |\n"
+rmse_table += f"| GRU  | Yes | {train_rmse_3:.2f} | {test_rmse_3:.2f} |\n"
+rmse_table += f"| Bidirectional GRU | No | {train_rmse_4:.2f} | {test_rmse_4:.2f} |\n"
+rmse_table += f"| Stacked Bidirectional GRU | Yes | {train_rmse_5:.2f} | {test_rmse_5:.2f} |\n"
+rmse_table += f"| Bidirectional LSTM | No | {train_rmse_6:.2f} | {test_rmse_6:.2f} |\n"
+rmse_table += f"| Bidirectional LSTM | Yes | {train_rmse_7:.2f} | {test_rmse_7:.2f} |\n"
+
+
+# Display the markdown table using the `display()` function:
+display(Markdown(rmse_table))
+```
+
+# How Far Into The Future Can We Predict?
+
+Up until this point, we assessed the models' prediction power for 2 years. Now, we will assess the models' prediction power for 5 years. For this exercise, we shall pick the best performing models (from the three unique models - Simple RNN, GRU, and Bidirectional LSTM), which include the following:
+
+1.  Simple RNN with L2 Regularization
+
+2.  GRU with L2 Regularization
+
+3.  Bidirectional LSTM (no regularization)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import SimpleRNN, Dense, LSTM, GRU, Bidirectional
+from tensorflow.keras import regularizers
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import RMSprop
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+import sys
+import matplotlib.pyplot as plt
+import random
+import warnings
+warnings.filterwarnings('ignore')
+random.seed(82716)
+
+# # read in data and convert to numpy array
+# train = pd.read_csv("univariate_train.csv")
+# test = pd.read_csv("univariate_test.csv")
+
+# concatenate training and test data
+
+combined_train_test = pd.concat([train,test],axis=0)
+
+# split into train and test data (test data = 5 years = 60 months or 60 time steps/observations)
+
+train_data = np.array(combined_train_test[0:465])
+test_data = np.array(combined_train_test[465:])
+
+# normalize values
+
+scaler = MinMaxScaler(feature_range=(0, 1))
+train_data = scaler.fit_transform(train_data).flatten()
+test_data = scaler.fit_transform(test_data).flatten()
+
+print(train_data.shape)
+print(test_data.shape)
+
+def get_XY(dat, time_steps,plot_data_partition=False):
+    global X_ind,X,Y_ind,Y #use for plotting later
+
+    # INDICES OF TARGET ARRAY
+    # Y_ind [  12   24   36   48 ..]; print(np.arange(1,12,1)); exit()
+    Y_ind = np.arange(time_steps, len(dat), time_steps); #print(Y_ind); exit()
+    Y = dat[Y_ind]
+
+    # PREPARE X
+    rows_x = len(Y)
+    X_ind=[*range(time_steps*rows_x)]
+    del X_ind[::time_steps] #if time_steps=10 remove every 10th entry
+    X = dat[X_ind]; 
+
+    #PLOT
+    if(plot_data_partition):
+        plt.figure(figsize=(15, 6), dpi=80)
+        plt.plot(Y_ind, Y,'o',X_ind, X,'-'); plt.show(); 
+
+    #RESHAPE INTO KERAS FORMAT
+    X1 = np.reshape(X, (rows_x, time_steps-1, 1))
+    # print([*X_ind]); print(X1); print(X1.shape,Y.shape); exit()
+
+    return X1, Y
+
+
+#PARTITION DATA
+p=10 # simpilar to AR(p) given time_steps data points, predict time_steps+1 point (make prediction one month in future)
+
+testX, testY = get_XY(test_data, p)
+trainX, trainY = get_XY(train_data, p)
+```
+
+## Simple RNN with L2 Regularization
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#CREATE MODEL
+model = Sequential()
+model.add(SimpleRNN(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='tanh')
+          ) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+#model.summary()
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse**2.0,train_rmse))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse**2.0,test_rmse))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+### Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# PLOT THE RESULT
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, scaler.inverse_transform(Y.reshape(-1,1)*3.2),'o', label='target')
+    plt.plot(X_ind, scaler.inverse_transform(X.reshape(-1,1)*3.2),'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+## GRU with L2 Regularization
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#CREATE MODEL
+model = Sequential()
+model.add(GRU(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]), 
+recurrent_regularizer=regularizers.L2(1e-2),
+activation='tanh')
+          ) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+#model.summary()
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse**2.0,train_rmse))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse**2.0,test_rmse))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+### Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# PLOT THE RESULT
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, scaler.inverse_transform(Y.reshape(-1,1)*3.2),'o', label='target')
+    plt.plot(X_ind, scaler.inverse_transform(X.reshape(-1,1)*3.2),'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+## Bidirectional LSTM (no regularization)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+recurrent_hidden_units=3
+epochs=100
+f_batch=0.2    #fraction used for batch size
+optimizer="RMSprop"
+validation_split=0.2
+callback = EarlyStopping(monitor='loss', patience=3) # This callback will stop the training when there is no improvement in the loss for three consecutive epochs
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#CREATE MODEL
+model = Sequential()
+model.add(Bidirectional(LSTM(
+recurrent_hidden_units,
+return_sequences=False,
+input_shape=(trainX.shape[1],trainX.shape[2]),
+activation='tanh')
+          )) 
+     
+#NEED TO TAKE THE OUTPUT RNN AND CONVERT TO SCALAR 
+model.add(Dense(units=1, activation='linear'))
+
+# BUILD THE MODEL 
+model.build(input_shape=(None, trainX.shape[1], trainX.shape[2]))
+
+# COMPILE THE MODEL 
+model.compile(loss='MeanSquaredError', optimizer=optimizer)
+#model.summary()
+```
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+#TRAIN MODEL
+history = model.fit(
+trainX, trainY, 
+epochs=epochs, # how many times to go through the entire dataset
+batch_size=int(f_batch*trainX.shape[0]), # 20% of training data as batch size
+validation_split=validation_split,  #use 20% of training data for validation
+callbacks=[callback], #early stopping
+verbose=0) #suppress messages
+```
+
+::: panel-tabset
+### Visualize Fitting History
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+#HISTORY PLOT
+epochs_steps = [*range(0, len(history.history['loss']))]
+
+# MAKE PREDICTIONS
+train_predict = model.predict(trainX).squeeze()
+unnormalized_train_predict = scaler.inverse_transform(train_predict.reshape(-1,1))
+test_predict = model.predict(testX).squeeze()
+unnormalized_test_predict = scaler.inverse_transform(test_predict.reshape(-1,1))
+#print(trainX.shape, train_predict.shape,trainY.shape,testX.shape, test_predict.shape,testY.shape)
+trainY_unnormalized = scaler.inverse_transform(trainY.reshape(-1,1))
+testY_unnormalized = scaler.inverse_transform(testY.reshape(-1,1))
+#COMPUTE RMSE
+#print(trainY.shape, train_predict.shape)
+train_rmse = np.sqrt(mean_squared_error(trainY, train_predict))
+test_rmse = np.sqrt(mean_squared_error(testY, test_predict))
+#print(np.mean((trainY-train_predict)**2.0))
+#print(np.mean((testY-test_predict)**2.0))
+
+print('Train MSE = %.5f RMSE = %.5f' % (train_rmse**2.0,train_rmse))
+print('Test MSE = %.5f RMSE = %.5f' % (test_rmse**2.0,test_rmse))    
+
+# PLOTLY PLOT
+plotly_line_plot([epochs_steps,epochs_steps],[history.history['loss'],history.history['val_loss']],title="Training Loss (Red) vs Validation Loss (Blue)",x_label="Number of Training Epochs",y_label="Loss (MSE)")
+```
+
+### Visualize Parity Plot (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# GET DATA
+# GENERATE PLOTLY FIGURE
+
+fig = px.scatter(x=trainY_unnormalized.flatten(),y=unnormalized_train_predict.flatten(),height=600,width=800)
+fig.add_scatter(x=testY_unnormalized.flatten(),y=unnormalized_test_predict.flatten(),mode="markers")
+fig.add_scatter(x=trainY_unnormalized.flatten(),y=trainY_unnormalized.flatten(), mode='lines')
+
+fig.update_layout(
+    xaxis_title="y_pred",
+    yaxis_title="y_data",
+    template="plotly_white",
+    showlegend=False
+)
+
+fig.show()
+```
+
+### Visualize Predictions (Unnormalized Data)
+
+```{python}
+#| echo: false
+#| warning: false
+#| message: false
+
+# PLOT THE RESULT
+def plot_result(trainY, testY, train_predict, test_predict):
+    plt.figure(figsize=(15, 6), dpi=80)
+    #ORIGINAL DATA
+    #print(X.shape,Y.shape)
+    plt.plot(Y_ind, scaler.inverse_transform(Y.reshape(-1,1)*3.2),'o', label='target')
+    plt.plot(X_ind, scaler.inverse_transform(X.reshape(-1,1)*3.2),'.', label='training points');     
+    plt.plot(Y_ind, unnormalized_train_predict,'r.', label='prediction');    
+    plt.plot(Y_ind, unnormalized_train_predict,'-');    
+    plt.legend()
+    plt.xlabel('Observation number after given time steps')
+    plt.ylabel('Inflation')
+    plt.title('Actual vs Predicted Values')
+    plt.show()
+plot_result(trainY_unnormalized, testY_unnormalized, unnormalized_train_predict, unnormalized_test_predict)
+```
+:::
+
+The LSTM model demonstrates superior performance, achieving the lowest RMSE, particularly when the size of the test set is expanded. This intriguing outcome suggests that the LSTM model is more adept at recognizing and adapting to the seasonal patterns in the data, especially for predictions of the inflation. The model's enhanced ability to forecast over extended future periods indicates its strong capacity for generalization to new, unseen data. Consequently, the LSTM model emerges as a highly recommended option for future forecasting tasks.
+
+# Comparison with ARIMA and SARIMA
+
+From the [ARMA/ARIMA/SARIMA section](https://akd.georgetown.domains/dsan5600/5600-project-website/_site/arma-arima-sarima-models.html), we observed that both the ARIMA models, `ARIMA(1,1,2)` AND `ARIMA(2,1,1)`, were subpar at forecastingmonthly inflation for 2 years. The forecasting results of ARIMA are shown below:
+
+![](images/Screen Shot 2023-11-29 at 12.14.23 AM.png)
+
+![](images/Screen Shot 2023-11-29 at 12.15.39 AM.png)
+
+One significant constraint in this analysis was the volume of data provided to each model. Recurrent Neural Networks (RNNs) generally require substantial datasets to learn more accurate representations and effectively discern patterns like seasonality. In our scenario, providing more extensive data could enhance the model's learning capability. Additionally, employing comprehensive hyperparameter optimization techniques, like GridSearch CV, might further refine the model's performance, potentially leading to improved outcomes.

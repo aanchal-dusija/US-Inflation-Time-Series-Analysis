@@ -1,0 +1,883 @@
+---
+title: "Financial Time Series Models (ARCH/GARCH)"
+format:
+  html:
+    page-layout: full
+    fontsize: 14px
+    code-fold: show
+    code-copy: true
+    code-tools: true
+    code-overflow: wrap
+reference-location: margin
+self-contained: true
+citation-location: margin
+---
+
+# USING ARCH AND GARCH FOR INFLATION ANALYSIS
+
+The study of inflation dynamics in the United States through financial time series models, such as ARCH (Autoregressive Conditional Heteroscedasticity) and GARCH (Generalized Autoregressive Conditional Heteroskedasticity), offers vital insights into the volatility and variability of inflation rates. Inflation, a measure of the rate at which the general level of prices for goods and services is rising, and subsequently, purchasing power is falling, is inherently volatile and subject to various economic forces.
+
+# ARCH Model in Inflation Analysis
+
+The ARCH model is particularly useful in modeling the variance of univariate time series data, such as inflation rates. It is especially adept at capturing periods of increased variation which are often observed in inflation data due to economic shocks or policy changes. The ARCH(p) model for inflation data can be expressed as:
+
+$$
+\begin{align*}
+\sigma_t^2 &= \alpha_0 + \alpha_1 \epsilon_{t-1}^2 + \alpha_2 \epsilon_{t-2}^2 + \cdots + \alpha_p \epsilon_{t-p}^2 \\
+\text{Where:} \\
+\sigma_t^2 &\text{ is the conditional variance of the time series at time } t. \\
+\epsilon_t &\text{ is the residual at time } t \text{ from the mean equation.} \\
+\alpha_i &\text{ are coefficients for the lagged squared residuals at lag } i.
+\end{align*}
+$$
+
+# GARCH Model in Inflation Analysis
+
+To further enhance the model, the GARCH framework, which extends the ARCH model by including a moving average component, can be used. This model is more flexible and can capture more complex dynamics in the variance of inflation rates. The GARCH(p,q) model is given by:
+
+$$
+\begin{align*}
+\sigma_t^2 &= \alpha_0 + \sum_{i=1}^p \alpha_i \epsilon_{t-i}^2 + \sum_{j=1}^q \beta_j \sigma_{t-j}^2 \\
+\text{Where:} \\
+\sigma_t^2 &\text{ is the conditional variance of the time series at time } t. \\
+\epsilon_t &\text{ is the residual at time } t \text{ from the mean equation.} \\
+\alpha_i &\text{ are coefficients for the lagged squared residuals at lag } i. \\
+\beta_j &\text{ are coefficients for the lagged conditional variances at lag } j. \\
+p &\text{ is the number of lags for the squared residuals in the model.} \\
+q &\text{ is the number of lags for the conditional variances in the model.}
+\end{align*}
+$$
+
+# Stocks for Inflation Analysis
+
+When analyzing the impact of inflation on financial markets, certain stocks or indices can be particularly indicative of inflation trends. For the context of this study, the following three stocks or indices are recommended:
+
+SCHP: The SCHP ETF specializes in U.S. Treasury Inflation-Protected Securities (TIPS), offering a direct response to inflation trends.
+
+SPDR S&P 500 ETF (SPY): As a broad market index, the SPY ETF reflects the overall health of the stock market and can be indirectly influenced by inflation trends.
+
+iShares TIPS Bond ETF (TIP): This ETF focuses on Treasury Inflation-Protected Securities, which are directly influenced by inflation rates and can provide a clear view of market expectations regarding inflation.
+
+By applying ARCH and GARCH models to these financial instruments, analysts can gain a deeper understanding of the implications of inflation on financial markets and the broader economy. The combination of these models allows for a nuanced analysis of the conditional variance structure of inflation-related time series data, providing insights into the patterns and potential future trends in inflation rates.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(flipbookr)
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(tidyverse)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+library(ggplot2)
+library(fontawesome)
+library(fGarch)
+library(rugarch)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+options("getSymbols.warning4.0"=FALSE)
+options("getSymbols.yahoo.warning"=FALSE)
+
+# Collecting SCHP since IPO
+
+tickers = c("SCHP")
+for (i in tickers){
+  getSymbols(i,
+             from = "1995-03-17",
+             to = "2023-01-30")}
+
+schp <- data.frame(SCHP$SCHP.Adjusted, SCHP$SCHP.Open, SCHP$SCHP.Close, SCHP$SCHP.High, SCHP$SCHP.Low)
+
+schp$Date <- rownames(schp)
+rownames(schp) <- NULL
+
+schp$Date<-as.Date(schp$Date,"%Y-%m-%d")
+
+# Collecting SPY since IPO
+
+tickers = c("SPY")
+for (i in tickers){
+  getSymbols(i,
+             from = "1983-03-04",
+             to = "2023-01-30")}
+
+spy <- data.frame(SPY$SPY.Adjusted, SPY$SPY.Open, SPY$SPY.Close, SPY$SPY.High, SPY$SPY.Low)
+
+spy$Date <- rownames(spy)
+rownames(spy) <- NULL
+
+spy$Date<-as.Date(spy$Date,"%Y-%m-%d")
+
+# Collecting TIP since formation
+
+tickers = c("TIP")
+for (i in tickers){
+  getSymbols(i,
+             from = "2008-12-01",
+             to = "2023-01-30")}
+
+tip <- data.frame(TIP$TIP.Adjusted, TIP$TIP.Open, TIP$TIP.Close, TIP$TIP.High, TIP$TIP.Low)
+
+tip$Date <- rownames(tip)
+rownames(tip) <- NULL
+
+tip$Date<-as.Date(tip$Date,"%Y-%m-%d")
+```
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+schp$SMA_50 <- as.numeric(SMA(Cl(schp),n=50))
+schp$SMA_200 <- as.numeric(SMA(Cl(schp),n=200))
+
+fig <- schp %>% plot_ly(x = ~Date, type="candlestick",
+          open = ~SCHP.Open, close = ~SCHP.Close,
+          high = ~SCHP.High, low = ~SCHP.Low, name = "Candlestick") %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_50, 
+            name="SMA_50", line = list(color = 'blue')) %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_200, 
+            name="SMA_200",line = list(color = 'orange')) 
+fig <- fig %>%
+  layout(title = "SCHP Candlestick Chart with 50 And 200 Day Simple Moving-Average") %>% 
+  layout(hovermode = "x") %>%
+  layout(paper_bgcolor = "black",
+         plot_bgcolor = "black",
+         font = list(color = "white"),
+         yaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"),
+         xaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"))
+
+fig
+```
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+spy$SMA_50 <- as.numeric(SMA(Cl(spy),n=50))
+spy$SMA_200 <- as.numeric(SMA(Cl(spy),n=200))
+
+fig <- spy %>% plot_ly(x = ~Date, type="candlestick",
+          open = ~SPY.Open, close = ~SPY.Close,
+          high = ~SPY.High, low = ~SPY.Low, name = "Candlestick") %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_50, 
+            name="SMA_50", line = list(color = 'blue')) %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_200, 
+            name="SMA_200",line = list(color = 'orange')) 
+fig <- fig %>%
+  layout(title = "SPY Candlestick Chart with 50 And 200 Day Simple Moving-Average") %>% 
+  layout(hovermode = "x") %>%
+  layout(paper_bgcolor = "black",
+         plot_bgcolor = "black",
+         font = list(color = "white"),
+         yaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"),
+         xaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"))
+
+fig
+```
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+tip$SMA_50 <- as.numeric(SMA(Cl(tip),n=50))
+tip$SMA_200 <- as.numeric(SMA(Cl(tip),n=200))
+
+fig <- tip %>% plot_ly(x = ~Date, type="candlestick",
+          open = ~TIP.Open, close = ~TIP.Close,
+          high = ~TIP.High, low = ~TIP.Low, name = "Candlestick") %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_50, 
+            name="SMA_50", line = list(color = 'blue')) %>% 
+  add_trace(type = 'scatter', mode = 'lines', y=~SMA_200, 
+            name="SMA_200",line = list(color = 'orange')) 
+fig <- fig %>%
+  layout(title = "TIP Candlestick Chart with 50 And 200 Day Simple Moving-Average") %>% 
+  layout(hovermode = "x") %>%
+  layout(paper_bgcolor = "black",
+         plot_bgcolor = "black",
+         font = list(color = "white"),
+         yaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"),
+         xaxis = list(linecolor = "#6b6b6b",
+                      zerolinecolor = "#6b6b6b",
+                      gridcolor= "#444444"))
+
+fig
+```
+:::
+
+## Visualizing Returns of Financial Time Series
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+getSymbols("SCHP", from = "1995-03-17",
+            to = "2023-01-30", src="yahoo")
+schp.close<- Ad(SCHP)
+returns_SCHP = diff(log(schp.close))
+chartSeries(returns_SCHP)
+```
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+getSymbols("SPY", from = "1983-03-04",
+           to = "2023-01-30", src="yahoo")
+spy.close<- Ad(SPY)
+returns_SPY = diff(log(spy.close))
+chartSeries(returns_SPY)
+```
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+getSymbols("TIP", from = "2008-12-01",
+           to = "2023-01-30", src="yahoo")
+tip.close<- Ad(TIP)
+returns_TIP = diff(log(tip.close))
+chartSeries(returns_TIP)
+```
+:::
+
+**SCHP:** The candlestick chart for SCHP shows a more mixed trend, with periods of both bullish and bearish behavior over the time period. There are several instances of long shadows, indicating significant price volatility, particularly in the early part of the time period. The candlesticks also show several instances of short-term reversals, with a few examples of bearish engulfing patterns, which may be a cause for concern for investors. Although SCHP also shows evidence of volatility clustering during three distinct periods - January 1998, December 2000, and January 2019. The candlestick chart for SCHP reveals that during these periods, there were some large bullish and bearish candlesticks.
+
+The low volatility of SCHP may suggest that it could be a more stable investment option, but it is important to note that low volatility can also lead to lower returns. Additionally, the volatility clustering observed in SCHP may still pose a risk for investors who are not adequately prepared to manage the potential impact of unexpected market events.
+
+The use of ARCH/GARCH models may help us understand the underlying dynamics of SCHP's returns, despite its low volatility. By modeling the time-varying volatility of SCHP returns, we can potentially identify periods of heightened risk and better manage our investment strategy accordingly.
+
+The candlestick chart can also provide additional insights into these periods of volatility clustering. For instance, during Jan 1998 and December 2000, we can see that there were several long shadows and a few bearish engulfing patterns, indicating a shift in sentiment towards selling. Similarly, in January 2019, we can see some long bullish candlesticks, which suggest a bullish sentiment among investors. These patterns can be useful for developing trading strategies and for understanding market sentiment.
+
+**SPY:** The candlestick chart for SPY shows a predominantly bullish trend, with a series of higher highs and higher lows over the course of the time period. There are a few instances of short-term bearish reversals, but overall the stock appears to be in an upward trend. The shadows of the candlesticks are generally small, indicating relatively little price volatility, but there are a few instances of longer shadows, which may be a sign of increased uncertainty or volatility.
+
+SPY's returns does support the findings from the candlestick chart. We see evidence of volatility clustering during three distinct periods: around 1998-2000, the beginning of 2009-2010, and the beginning of 2020 to the end of 2021. This clustering of volatility is consistent with the findings of many financial studies, and can have important implications for trading strategies and risk management. One approach to modeling volatility clustering is to use ARCH/GARCH models, which are specifically designed to capture the time-varying volatility of financial time series data.
+
+In the case of SPY, we can use the candlestick chart to gain additional insights into these periods of volatility clustering. For example, during the period from 1998-2000, we can see that there are several long shadows and a few bearish engulfing patterns, which may have contributed to the increased volatility during that time period. Similarly, during the beginning of 2009-2010 and the beginning of 2020 to the end of 2021, we can see that the candlestick chart shows increased uncertainty and volatility, with larger and more frequent bullish and bearish candlesticks.
+
+By using ARCH/GARCH models to model the time-varying volatility of SPY returns, we can gain a more accurate understanding of the underlying dynamics of the stock's behavior, and potentially identify trading opportunities or develop more effective risk management strategies.
+
+**TIP:**
+
+The candlestick chart for the TIP shows a predominantly bullish trend, with a steady increase in price over the course of the time period. There are a few instances of short-term bearish reversals, but overall the trend is upward. The shadows of the candlesticks are generally small, indicating relatively little price volatility, but there are a few instances of longer shadows, which may be a sign of increased uncertainty or volatility. It's also worth noting that the trend appears to be accelerating in the latter part of the time period, with more frequent and larger bullish candlesticks.
+
+The candlestick analysis of TIP reveals a consistent pattern of volatility clustering, which is also evident in its returns. The ARCH/GARCH models can be used to capture the clustering of volatility in TIP's returns. The clusters of high volatility are reflected in the candlestick chart as long candlesticks, indicating large price movements. The GARCH model can help identify periods of high volatility and provide insight into the potential future volatility of TIP The presence of volatility clustering in TIP's returns suggests that market participants may be reacting to significant news or events, leading to heightened uncertainty and increased volatility. The ARCH/GARCH models can be useful tools for understanding the sources and potential impacts of such market developments, helping investors and analysts to make more informed decisions.
+
+## ACF and PACF of Returns
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_SCHP %>% ggtsdisplay() 
+```
+
+Both ACF and PACF plots of SCHP's returns (raw) since its incorporation show high correlation, which means the series is not stationary. This may also suggest that there is strong persistence or momentum in the returns. Such patterns can be captured by ARMA models and can help to inform the selection of appropriate lag lengths for ARCH/GARCH models.
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_SPY %>% ggtsdisplay() 
+```
+
+Like SCHP's returns, SPY's ACF and PACF plots show high correlation, which means the series is not stationary. An AR or ARMA model might be required to fit the series before fitting the ARCH/GARCH model.
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_TIP %>% ggtsdisplay() 
+```
+
+The ACF and PACF plots of TIP returns suggest that there may be some autocorrelation present in the data. Specifically, lags 1 to 5 do not appear to be significantly correlated, but there is significant autocorrelation from lag 6 onwards. This pattern of autocorrelation may be indicative of a GARCH effect, where the volatility of the series is changing over time. The presence of significant autocorrelation at higher lags may suggest that the returns exhibit a degree of persistence or momentum, where positive (or negative) returns tend to be followed by further positive (or negative) returns. Such patterns can be captured by ARMA models and can help to inform the selection of appropriate lag lengths for ARCH/GARCH models.
+:::
+
+## ACF and PACF of Squared Returns
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_SCHP^2 %>% ggtsdisplay() 
+```
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_SPY^2 %>% ggtsdisplay() 
+```
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+returns_TIP^2 %>% ggtsdisplay() 
+```
+:::
+
+## ACF and PACF of Absolute Returns
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+abs(returns_SCHP) %>% ggtsdisplay() 
+```
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+abs(returns_SPY) %>% ggtsdisplay() 
+```
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+abs(returns_TIP) %>% ggtsdisplay() 
+```
+:::
+
+After transforming the returns, clear correlation is discerned in both ACF and PACF plots for all three financial series when we examine their absolute and squared returns. It is likely that there is some non-linear dependence present in the data, which could be attributed to volatility clustering, signifying periods of high volatility tend to be followed by periods of high volatility, and periods of low volatility tend to be followed by periods of low volatility. This pattern can be captured by ARCH/GARCH models, which allow for the conditional variance of the series to depend on past squared returns. The decreasing significance of the ACF and PACF at higher lags may indicate that the effects of past volatility on current volatility decay over time, which can be modeled by including lagged terms of the conditional variance in the ARCH/GARCH models. Overall, the ACF and PACF plots of squared returns can provide useful information about the structure of the data and can guide the development of appropriate time series models for capturing the volatility clustering.
+
+Therefore, just fitting an ARCH model to each series is not enough! An ARCH model, which is designed to capture volatility clustering or autocorrelation in the squared returns, could be a good starting point. However, an ARCH model only models the conditional variance of the data and assumes that the conditional mean is constant over time. Since there is also autocorrelation in the returns themselves, then an ARMA or ARIMA model may be necessary to model the conditional mean. Therefore, we should fit an ARMA or ARIMA model first to the stocks and then fit an ARCH to the residuals of the ARMA or ARIMA model.
+
+## Fitting ARIMA Model
+
+### ACF and PACF of SCHP Stock's Transformations (Log, Difference, Differenced Log)
+
+::: panel-tabset
+#### Log Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+log.schp=log(schp.close)
+
+log.schp %>% ggtsdisplay()
+```
+
+#### Differenced Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+diff.schp=diff(schp.close)
+
+diff.schp %>% ggtsdisplay()
+```
+
+#### Differenced Log Transformation
+
+```{r, message=FALSE, warning=FALSE,results='hide',fig.keep='all'}
+logdiff.schp=diff(log(schp.close))
+
+logdiff.schp %>% ggtsdisplay()
+```
+:::
+
+### ACF and PACF of SPY Stock's Transformations (Log, Difference, Differenced Log)
+
+::: panel-tabset
+#### Log Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+log.spy=log(spy.close)
+
+log.spy %>% ggtsdisplay()
+```
+
+#### Differenced Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+diff.spy=diff(spy.close)
+
+diff.spy %>% ggtsdisplay()
+```
+
+#### Differenced Log Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+difflog.spy=diff(log(spy.close))
+
+difflog.spy %>% ggtsdisplay()
+```
+:::
+
+### ACF and PACF of TIP Index's Transformations (Log, Difference, Differenced Log)
+
+::: panel-tabset
+#### Log Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+log.tip=log(tip.close)
+
+log.tip %>% ggtsdisplay()
+```
+
+#### Differenced Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+diff.tip=diff(tip.close)
+
+diff.tip %>% ggtsdisplay()
+```
+
+#### Differenced Log Transformation
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+logdiff.tip=log(diff(tip.close))
+
+logdiff.tip %>% ggtsdisplay()
+```
+:::
+
+### Checking for different ARIMA(p,q,d) Combinations: SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+######################## Check for different combinations ########
+
+
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=1,2,3
+{
+  for(q in 1:4)# q=1,2,3
+  {
+    for(d in 0:1)
+    {
+      
+      if(p-1+d+q-1<=8)
+      {
+        
+        model<- Arima(log.schp,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+cat("Lowest AIC model: \n")
+temp[which.min(temp$AIC),] # 0,1,0
+cat("\nLowest BIC model: \n")
+temp[which.min(temp$BIC),] # 0,1,1
+cat("\nLowest AICc model: \n")
+temp[which.min(temp$AICc),] # 0,1,0
+```
+
+We shall choose ARIMA(2,1,3) as the best model for SCHP, given it has the lowest BIC, its AIC is fairly close to other, more complex ARIMA model and we shall be abiding by the principle of parsimony. Moreover, an ARMA model only captures the conditional mean, whereas an ARIMA model captures both the conditional mean and conditional variance.
+
+### Checking for different ARIMA(p,q,d) Combinations: SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+######################## Check for different combinations ########
+
+
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=1,2,3
+{
+  for(q in 1:4)# q=1,2,3
+  {
+    for(d in 0:1)
+    {
+      
+      if(p-1+d+q-1<=8)
+      {
+        
+        model<- Arima(log.spy,order=c(p-1,d,q-1),include.drift=TRUE) 
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+cat("Lowest AIC model: \n")
+temp[which.min(temp$AIC),] # 3,1,3
+cat("\nLowest BIC model: \n")
+temp[which.min(temp$BIC),] # 0,1,0
+cat("\nLowest AICc model: \n")
+temp[which.min(temp$AICc),] # 3,1,3
+```
+
+We shall choose ARIMA(3,1,2), a random walk, as the best model for SPY, given it has the lowest BIC, its AIC is fairly close to other, more complex ARIMA model, ARIMA(3,1,3), and we shall be abiding by the principle of parsimony.
+
+### Checking for different ARIMA(p,q,d) Combinations: TIP
+
+```{r, message=FALSE, warning=FALSE,results='hide',fig.keep='all'}
+######################## Check for different combinations ########
+
+
+d=1
+i=1
+temp= data.frame()
+ls=matrix(rep(NA,6*32),nrow=32) # roughly nrow = 3x4x2
+
+
+for (p in 1:4)# p=1,2,3
+{
+  for(q in 1:4)# q=1,2,3
+  {
+    for(d in 0:1)
+    {
+      
+      if(p-1+d+q-1<=8)
+      {
+        
+        model<- Arima(tip.close,order=c(p-1,d,q-1),include.drift=TRUE) # taking log gives NA error (dont want to use CSS Method that is based conditional likelihood and does not produce same likelihood value which unconditional likelihood function produces when it is optimized for the same parameters.)
+        ls[i,]= c(p-1,d,q-1,model$aic,model$bic,model$aicc)
+        i=i+1
+        #print(i)
+        
+      }
+      
+    }
+  }
+}
+
+temp= as.data.frame(ls)
+names(temp)= c("p","d","q","AIC","BIC","AICc")
+
+#temp
+knitr::kable(temp)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+cat("Lowest AIC model: \n")
+temp[which.min(temp$AIC),] # 3,0,3
+cat("\nLowest BIC model: \n")
+temp[which.min(temp$BIC),] # 0,1,0
+cat("\nLowest AICc model: \n")
+temp[which.min(temp$AICc),] # 3,0,3
+```
+
+We shall choose ARIMA(3,1,2), a random walk, as the best model for TIP, given it has the lowest BIC and AIC.
+
+## Model Diagnostics
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE,results='hide',fig.keep='all'}
+arima.schp=sarima(log.schp,2,1,3)
+summary(arima.schp)
+```
+
+The plot of standardized residuals should have a mean around 0 and a variance of approximately 1. The plot for SCHP generally meets the criterion for the mean but has higher variance with clusters, indicating the need for an ARCH/GARCH model for the errors. The absence of significant lags in the ACF plot of residuals is an encouraging sign. The qq-plot indicates some signs of normality with slight skew at the tails. In addition, the p-values for the Ljung-Box test are above 0.05 for many lags, suggesting a well-fitted model. Ideally, we would like to fail to reject the null hypothesis. That is, we would like to see the p-value of the test be greater than 0.05 because this means the residuals for our time series model are independent. Overall, while the variance of the standardized residuals suggests the need for an ARCH/GARCH model, the other diagnostic plots indicate a good fit for the ARIMA model.
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+arima.spy=sarima(log.spy,3,1,2)
+summary(arima.spy)
+```
+
+The plot of standardized residuals for SPY is also centered around 0 and has significantly lower number of clusters. Moreover, the variance within those few clusters is not as high as those in SCHP's plot of standardized residuals. In addition, the p-values for the Ljung-Box test are above 0.05 for the first few lags and the absence of significant lags in the ACF plot of residuals is an encouraging sign. The qq-plot indicates some signs of normality with slight skew at the tails.
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+arima.tip=sarima(tip.close,3,1,2)
+summary(arima.tip)
+```
+
+The plot of standardized residuals for TIP is also centered around 0 and has significantly lower number of clusters. Moreover, the variance within those few clusters is not as high as those in SCHP's plot of standardized residuals. Although none of the p-values for the Ljung-Box test are above 0.05, signifying that the residuals might not be independently distributed or that they exhibit serial correlation, a random walk model can be expected to show these outputs. Regardless, the absence of significant lags in the ACF plot of residuals is an encouraging sign. The qq-plot indicates some signs of normality with slight skew at the tails.
+:::
+
+## Plotting Squared Residuals of Chosen Models and their ACFs and PACFs
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+arima.schp=Arima(log.schp,order=c(2,1,3))
+res.arima.schp=arima.schp$res
+sq.res.arima.schp=res.arima.schp^2
+
+sq.res.arima.schp %>% ggtsdisplay()
+```
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+arima.spy=Arima(log.spy,order=c(3,1,2))
+res.arima.spy=arima.spy$res
+sq.res.arima.spy=res.arima.spy^2
+
+sq.res.arima.spy %>% ggtsdisplay()
+```
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+arima.tip=Arima(tip.close,order=c(3,1,2))
+res.arima.tip=arima.tip$res
+sq.res.arima.tip=res.arima.tip^2
+
+sq.res.arima.tip %>% ggtsdisplay()
+```
+:::
+
+All the squared residuals plots show signs of volatility clustering. After conducting the model diagnostics and perusing the ACF and PACF of the squared residuals, a GARCH(p,q) model is suitable for all financial series.
+
+## Fitting GARCH(p,q) Models to Residuals
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+model <- list() ## set counter
+cc <- 1
+for (p in 1:10) {
+  for (q in 1:10) {
+  
+model[[cc]] <- garch(res.arima.schp,order=c(q,p),trace=F)
+cc <- cc + 1
+}
+} 
+
+## get AIC values for model evaluation
+GARCH_AIC <- sapply(model, AIC) 
+
+model[[which(GARCH_AIC == min(GARCH_AIC))]] ## model with lowest AIC is the best and output model summary
+```
+
+**SCHP:**
+
+The outputted model is `GARCH(1,1)`. Therefore, the final model is `ARIMA(2,1,3) + GARCH(1,1)`
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+model <- list() ## set counter
+cc <- 1
+for (p in 1:10) {
+  for (q in 1:10) {
+  
+model[[cc]] <- garch(res.arima.spy,order=c(q,p),trace=F)
+cc <- cc + 1
+}
+} 
+
+## get AIC values for model evaluation
+GARCH_AIC <- sapply(model, AIC) 
+
+model[[which(GARCH_AIC == min(GARCH_AIC))]] ## model with lowest AIC is the best and output model summary
+```
+
+**SPY:**
+
+The outputted model is `GARCH(2,2)`. Therefore, the final model is `ARIMA(3,1,2) + GARCH(2,2)`
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE, results='hide',fig.keep='all'}
+model <- list() ## set counter
+cc <- 1
+for (p in 1:20) {
+  for (q in 1:20) {
+  
+model[[cc]] <- garch(res.arima.tip,order=c(q,p),trace=F)
+cc <- cc + 1
+}
+} 
+
+## get AIC values for model evaluation
+GARCH_AIC <- sapply(model, AIC) 
+
+model[[which(GARCH_AIC == min(GARCH_AIC))]] ## model with lowest AIC is the best and output model summary
+```
+
+**TIP:**
+
+The outputted model is `GARCH(18,1)`. Therefore, the final model is `ARIMA(3,1,2) + GARCH(18,1)`
+:::
+
+## Fitting ARIMA + GARCH (final model) and Conducting Box-Ljung Test on Residuals
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE}
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)), 
+                   mean.model = list(armaOrder = c(2,1, 3)), 
+                   distribution.model = "std")
+
+fit.schp <- ugarchfit(spec, data = res.arima.schp, solver = "hybrid")
+
+
+# Perform Box-Ljung test on residuals
+cat("Box-Ljung Test on Residuals based on lag = 1: \n")
+Box.test(fit.schp@fit$residuals, type="Ljung-Box")
+
+cat("\nBox-Ljung Test on Residuals based on lag = 10: \n")
+Box.test(fit.schp@fit$residuals, type="Ljung-Box", lag=10) # not signif after lag = 11 
+```
+
+The Box-Ljung Test outputs a p-value \> 0.05 for all lags up until 10, which signifies that the ARIMA(2,1,3) + GARCH(1,1), fitted on SCHP, captures the autocorrelation structure in the data until lag 10. This indicates that the model is robust is forecasting the volatility of future returns of SCHP.
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE}
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2,2)), 
+                   mean.model = list(armaOrder = c(3,1,2)), 
+                   distribution.model = "std")
+
+fit.spy <- ugarchfit(spec, data = res.arima.spy, solver = "hybrid")
+
+
+# Perform Box-Ljung test (lag=1 and lag=10) on residuals
+cat("Box-Ljung Test on Residuals based on lag = 1: \n")
+Box.test(fit.spy@fit$residuals, type="Ljung-Box")
+
+cat("\nBox-Ljung Test on Residuals based on lag = 5: \n")
+Box.test(fit.spy@fit$residuals, type="Ljung-Box", lag=5) # not signif after lag = 3
+```
+
+The Box-Ljung Test outputs a p-value \> 0.05 for all lags up until 3, which signifies that the ARIMA(3,1,2) + GARCH(2,2), fitted on SPY, captures the autocorrelation structure in the data until lag 3. The model can still be employed to forecast the volatility of future returns of SPY and is a good indication that the model is capturing the important dynamics in the data.
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE}
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(18,1)), 
+                   mean.model = list(armaOrder = c(3,1,2)), 
+                   distribution.model = "std")
+
+fit.tip <- ugarchfit(spec, data = res.arima.tip, solver = "hybrid")
+
+
+# Perform Box-Ljung test (lag=1 and lag=10) on residuals
+cat("Box-Ljung Test on Residuals based on lag = 1: \n")
+Box.test(fit.tip@fit$residuals, type="Ljung-Box")
+
+cat("\nBox-Ljung Test on Residuals based on lag = 5: \n")
+Box.test(fit.tip@fit$residuals, type="Ljung-Box", lag=5) # not signif after lag = 5
+```
+
+The Box-Ljung Test outputs a p-value \> 0.05 for all lags up until 5, which signifies that the ARIMA(3,1,2) + GARCH(18,1), fitted on TIP, captures the autocorrelation structure in the data until lag 3. The AR component of the GARCH model is significantly more complex than that of the other models because it has a much higher number of GARCH terms (18) relative to the other models.
+:::
+
+## Model Equations
+
+SCHP: ARIMA(2,1,3) + GARCH(1,1) $$
+\begin{align*}
+\text{ARIMA(2,1,3):} \quad (1 - \phi_1 B - \phi_2 B^2) \nabla Y_t &= (1 + \theta_1 B + \theta_2 B^2 + \theta_3 B^3)\epsilon_t \\
+\text{GARCH(1,1):} \quad \sigma_t^2 &= \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2 \\
+\text{Where:} \\
+Y_t &\text{ is the time series data.} \\
+\nabla &\text{ is the difference operator.} \\
+\phi_i &\text{ are the autoregressive parameters.} \\
+\theta_j &\text{ are the moving average parameters.} \\
+\epsilon_t &\text{ is the error term at time } t. \\
+\sigma_t^2 &\text{ is the conditional variance at time } t. \\
+\omega &\text{ is the constant term in the variance equation.} \\
+\alpha &\text{ is the parameter for the lagged squared residual.} \\
+\beta &\text{ is the parameter for the lagged conditional variance.}
+\end{align*}
+$$
+
+SPY: ARIMA(3,1,2) + GARCH(2,2) $$
+\begin{align*}
+\text{ARIMA(3,1,2):} \quad (1 - \phi_1 B - \phi_2 B^2 - \phi_3 B^3) \nabla Y_t &= (1 + \theta_1 B + \theta_2 B^2)\epsilon_t \\
+\text{GARCH(2,2):} \quad \sigma_t^2 &= \omega + \alpha_1 \epsilon_{t-1}^2 + \alpha_2 \epsilon_{t-2}^2 + \beta_1 \sigma_{t-1}^2 + \beta_2 \sigma_{t-2}^2 \\
+\text{Where:} \\
+Y_t &\text{ is the time series data.} \\
+\nabla &\text{ is the difference operator.} \\
+\phi_i &\text{ are the autoregressive parameters.} \\
+\theta_j &\text{ are the moving average parameters.} \\
+\epsilon_t &\text{ is the error term at time } t. \\
+\sigma_t^2 &\text{ is the conditional variance at time } t. \\
+\omega &\text{ is the constant term in the variance equation.} \\
+\alpha_i &\text{ are the parameters for the lagged squared residuals.} \\
+\beta_j &\text{ are the parameters for the lagged conditional variances.}
+\end{align*}
+$$
+
+TIP: ARIMA(3,1,2) + GARCH(18,1) $$
+\begin{align*}
+\text{ARIMA(3,1,2):} \quad (1 - \phi_1 B - \phi_2 B^2 - \phi_3 B^3) \nabla Y_t &= (1 + \theta_1 B + \theta_2 B^2)\epsilon_t \\
+\text{GARCH(18,1):} \quad \sigma_t^2 &= \omega + \sum_{i=1}^{18} \alpha_i \epsilon_{t-i}^2 + \beta \sigma_{t-1}^2 \\
+\text{Where:} \\
+Y_t &\text{ is the time series data.} \\
+\nabla &\text{ is the difference operator.} \\
+\phi_i &\text{ are the autoregressive parameters.} \\
+\theta_j &\text{ are the moving average parameters.} \\
+\epsilon_t &\text{ is the error term at time } t. \\
+\sigma_t^2 &\text{ is the conditional variance at time } t. \\
+\omega &\text{ is the constant term in the variance equation.} \\
+\alpha_i &\text{ are the parameters for the lagged squared residuals (up to 18 lags in this case).} \\
+\beta &\text{ is the parameter for the lagged conditional variance.}
+\end{align*}
+$$
+
+## Volatility Plots for ARIMA + GARCH Models
+
+These plots represent the estimated conditional variances of the ARIMA residuals obtained from the fitted sGARCH model. The y-axis shows the values of the estimated variances, while the x-axis represents the time period for which the variances were estimated.
+
+::: panel-tabset
+### SCHP
+
+```{r, message=FALSE, warning=FALSE}
+hhat <- (fit.schp@fit$sigma^2)
+plot.ts(hhat, col="#005BAD")
+```
+
+The volatility plot provides evidence that LMT's stock price experienced relatively higher volatility in the following periods: end of 1998 to beginning of 2003, the beginning of the 2008 financial crisis, and the onset of the COVID-19 pandemic.
+
+### SPY
+
+```{r, message=FALSE, warning=FALSE}
+hhat <- (fit.spy@fit$sigma^2)
+plot.ts(hhat, col="#E61231")
+```
+
+The volatility plot provides evidence that SPY's stock price experienced relatively higher volatility in the following periods: end of 1987 to beginning of 1988 (signifying that the Black Monday stock market crash catalyzed SPY's lowest stock price until 2019), the beginning of the 2008 financial crisis, and the onset of the COVID-19 pandemic.
+
+### TIP
+
+```{r, message=FALSE, warning=FALSE}
+hhat <- (fit.tip@fit$sigma^2)
+plot.ts(hhat)
+```
+
+The volatility plot provides evidence that SPY's stock price experienced relatively higher volatility in the following periods: the onset of the COVID-19 pandemic. The index is fairly new compared to the other 2 stocks and, hence, its higher volatility is warranted, especially due to the COVID-19 pandemic.
+:::
