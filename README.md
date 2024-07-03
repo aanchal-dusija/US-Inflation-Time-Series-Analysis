@@ -1,5 +1,8 @@
 # US Inflation Time Series Analysis
 
+![Data Science Banner](TimeSeries.png)
+
+
 ## Overview
 This repository contains a comprehensive analysis of US inflation rates using advanced time-series modeling techniques. The primary goal is to forecast future inflation trends by leveraging historical data and various economic indicators.
 
